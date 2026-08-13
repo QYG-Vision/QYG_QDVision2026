@@ -1,0 +1,9 @@
+/**:
+  ros__parameters:
+    record_dir: "/ros_ws/record/record_test"
+    camera_info_url: "package://rm_bringup/config/camera_info.yaml" 
+    target_frame: "odom"
+    has_armor: true
+    has_rune: false
+    video_hz: 60.0  # 视频帧率，单位为Hz
+    serial_ahead_ms: 10.0 # 提前发送串口，单位为毫秒

@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<robot name="rm_gimbal"
+  xmlns:xacro="http://ros.org/wiki/xacro">
+  <xacro:arg name="xyz" default="0.1006 -0.0465 0.0" />
+  <xacro:arg name="rpy" default="0 0 0" />
+
+  <xacro:arg name="xyz_" default="0.1006 0.0465 0.0" />
+  <xacro:arg name="rpy_" default="0 0.016057 0" />
+
+  <link name="odom" />
+
+  <link name="gimbal_link" />
+
+  <joint name="gimbal_joint" type="floating">
+    <parent link="odom" />
+    <child link="gimbal_link" />
+  </joint>
+
+  <!-- camera_link: 由 dynamic_camera_tf 节点发布变换，用于调试装配误差（xyz + rpy） -->
+  <link name="camera_link" />
+
+  <!-- 默认变换，会被 dynamic_camera_tf 节点覆盖 -->
+  <joint name="camera_joint" type="fixed">
+    <origin xyz="$(arg xyz)" rpy="$(arg rpy)" />
+    <parent link="gimbal_link" />
+    <child link="camera_link" />
+    <axis xyz="0 0 0" />
+  </joint>
+
+  <link name="camera_optical_frame" />
+
+  <joint name="camera_optical_joint" type="fixed">
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}" />
+    <parent link="camera_link" />
+    <child link="camera_optical_frame" />
+  </joint>
+
+  <link name="gimbal_link2" />
+
+  <joint name="gimbal_joint2" type="floating">
+    <parent link="odom" />
+    <child link="gimbal_link2" />
+  </joint>
+
+  <link name="camera_link2" />
+
+  <joint name="camera_joint2" type="fixed">
+    <origin xyz="$(arg xyz_)" rpy="$(arg rpy_)" />
+    <parent link="gimbal_link" />
+    <child link="camera_link2" />
+    <axis xyz="0 0 0" />
+  </joint>
+
+  <link name="camera_optical_frame2" />
+
+  <joint name="camera_optical_joint2" type="fixed">
+    <origin xyz="0 0 0" rpy="${-pi/2} 0 ${-pi/2}" />
+    <parent link="camera_link2" />
+    <child link="camera_optical_frame2" />
+  </joint>
+
+</robot>

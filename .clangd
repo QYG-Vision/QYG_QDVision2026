@@ -1,0 +1,7 @@
+# .clangd
+Completion:
+  # 禁用头文件自动补全
+  # 可选值: IWYU (默认, Include-What-You-Use), Never
+  HeaderInsertion: Never
+Diagnostics:
+  UnusedIncludes: None # 处理“未使用的头文件”选项: None, Strict

@@ -1,0 +1,47 @@
+# 6mm相机配置
+camera_6mm:
+  enable_DeviceSerialNumber: false # 是否使用序列号查找，只使用一个相机改为 false
+  device_serial_number: "DA4845979"  # 相机序列号
+  camera_info_url: "package://rm_bringup/config/camera_info.yaml"  # 相机内参文件路径
+  camera_name: "camera_6mm"  # 相机名称
+  target_frame: "camera_optical_frame"  # 目标frame_id
+  
+  # 相机参数
+  ReverseXY: false        # 相机是否倒置安装
+  enable_frame_rate: true # 是否锁帧
+  acquisition_frame_rate: 100.0  # 采集帧率 (Hz)
+  exposure_time: 1000.0  # 曝光时间 (微秒)
+  gain: 16.9  # 增益
+  cvt_quality: 1 # Bayer的插值方法  0-快速 1-均衡（默认为均衡） 2-最优 3-最优+
+  pixel_format: "BayerRG8"  # 像素格式: "BayerRG8" 或 "RGB8Packed"
+  adc_bit_depth: "ADCBitDepth_8"  # ADC位深: "ADCBitDepth_8" 或 "ADCBitDepth_12"
+  enable_opencv: true # 是否使用 cv::cvtColor 进行插值
+
+  # 相机切换阈值（米）
+  switch_to_8mm_distance: 3.7  # 距离超过此值时切换到8mm相机
+  switch_to_6mm_distance: 1.0  # 距离小于此值时切换回6mm相机
+
+# 8mm相机配置
+camera_8mm:
+  enable_DeviceSerialNumber: true # 是否使用序列号查找
+  device_serial_number: "DA4845980"  # 相机序列号
+  camera_info_url: "package://rm_bringup/config/camera_info_copy.yaml"  # 相机内参文件路径
+  camera_name: "camera_8mm"  # 相机名称
+  target_frame: "camera_optical_frame2"  # 目标frame_id
+  
+  # 相机参数
+  ReverseXY: false        # 相机是否倒置安装
+  enable_frame_rate: false # 是否锁帧
+  acquisition_frame_rate: 200.0  # 采集帧率 (Hz)
+  exposure_time: 1000.0  # 曝光时间 (微秒)
+  gain: 1.0  # 增益
+  cvt_quality: 1 # Bayer的插值方法  0-快速 1-均衡（默认为均衡） 2-最优 3-最优+
+  pixel_format: "BayerRG8"  # 像素格式: "BayerRG8" 或 "RGB8Packed"
+  adc_bit_depth: "ADCBitDepth_8"  # ADC位深: "ADCBitDepth_8" 或 "ADCBitDepth_12"
+  enable_opencv: false # 是否使用 cv::cvtColor 进行插值
+
+  # 相机切换阈值（米）
+  switch_to_8mm_distance: 0.5  # 距离超过此值时切换到8mm相机
+  switch_to_6mm_distance: 3.0  # 距离小于此值时切换回6mm相机
+
+

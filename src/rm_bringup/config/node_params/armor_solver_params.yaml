@@ -1,0 +1,70 @@
+/**:
+  ros__parameters:
+    debug: false
+    armor_solver.result_img.jpeg_quality: 50  # 结果图像的jpeg压缩质量，0-100，数值越大质量越好，文件也越大
+    target_frame: odom
+    gimble_frame: gimbal_link
+    max_armor_distance: 10.0
+    filter_reset_dt_thres: 1.0
+    enable_solveYawPnp: true  #三分法求yaw
+
+    ekf:
+      lmtd_top_model:
+        q_pos_v: 100.0
+        q_orientation_yaw_v: 400.0
+
+      armor_model:
+        q_x: 0.01
+        q_v: 100.0
+
+        r_yaw: 1.0
+        r_pitch: 1.5
+        r_distance: 50.0
+
+    tracker:
+      max_match_distance: 0.5
+      max_match_yaw_diff: 0.7
+
+      tracking_thres: 2
+      lost_time_thres: 0.3
+          
+    solver:
+      use_armor_top: false            # 是否使用平移运动模型(armor_model),仅在 top0 时使用
+      predict2send_delay: 0.0         # 从预测到串口发送的延迟
+      controller_delay: 0.0           # 开火延迟
+      additional_prediction_time: 0.0 # 根据角速度，给电控指令的额外预测时间
+      shooting_range_width: 0.135     # 开火宽度范围
+      shooting_range_height: 0.135    # 开火高度范围
+      bullet_speed: 23.0   #弹速
+      bullet_speed_filter_alpha: 0.3  # 弹速一阶低通滤波系数，越小越稳
+      compensator_type: "ceres" # ideal(仅重力) resistance(阻力近似) ceres(ceres线阻力) rk4(四阶龙格库塔)
+      gravity: 9.8       #重力加速度
+      resistance: 0.022928514188   #空气阻力
+      iteration_times: 20 # 补偿的迭代次数 暂时没用到
+      rk4:
+        time_step: 0.003
+        max_steps: 8000
+        hit_distance_threshold: 0.02
+
+      # max_out_error 是开火误差，1最大，是整块小装甲板大小
+      # max_orientation_angle 是击打装甲板最大角度
+      # 以下的 angle 为角度制
+      top0:
+        max_out_error: 0.7
+        max_orientation_angle: 58.88
+      top1:
+        activate_threshold: 90.0  # 角速度达到该值时提升到1级
+        deactivate_threshold: 60.0 # 角速度低于该值时降到0级
+        max_out_error: 0.7
+        max_orientation_angle: 30.0
+      top2:
+        activate_threshold: 500.0 # 角速度达到该值时提升到2级
+        deactivate_threshold: 450.0 # 角速度低于该值时降到1级
+        max_out_error: 1.8
+        max_orientation_angle: 0.0
+      # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿值，yaw轴补偿值"]
+      # 目标相对于odom
+      angle_offset: [
+        "0.0 6.0 -1.0 1.0 0.0 0.0",
+
+      ]

@@ -1,0 +1,6 @@
+/**:
+  ros__parameters:
+    roll: 0.0
+    pitch: 1.34
+    yaw: 0.67
+    vision_mode: 1

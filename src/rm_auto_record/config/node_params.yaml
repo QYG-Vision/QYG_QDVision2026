@@ -1,0 +1,52 @@
+/**:
+  ros__parameters:
+    uri: "/ros_ws/rosbag/"
+    buffer_duration: 10.0   # 缓冲时长（秒），触发录制时会把缓冲区数据一并写入
+    stop_delay: 10.0         # distance <= 0 持续多久后停止录制（秒）
+    topic_name:
+    # camera
+    # - "/armor_solver/result_img"
+    # armor solver visualization
+    - "/armor_solver/result_img/compressed"
+    - "/armor_detector/camera_info"
+    - "/armor_solver/armors" 
+    - "/armor_detector/marker"
+    # serial
+    - "/serial/receive"
+    # armor solver
+    - "/armor_solver/cmd_gimbal"
+    - "/armor_solver/target"
+    - "/armor_solver/marker" 
+    - "/armor_solver/measurement"
+    # tf
+    - "/tf" 
+    - "/tf_static"
+    - "/joint_states"
+    # robot
+    - "/robot_description"
+    # parameter
+    - "/parameter_events"
+
+    topic_type:
+    # camera
+    # - "sensor_msgs/msg/Image"
+    # armor solver visualization
+    - "sensor_msgs/msg/CompressedImage"
+    - "sensor_msgs/msg/CameraInfo"
+    - "rm_interfaces/msg/Armors"
+    - "visualization_msgs/msg/MarkerArray"
+    # serial
+    - "rm_interfaces/msg/SerialReceiveData"
+    # armor solver
+    - "rm_interfaces/msg/GimbalCmd"
+    - "rm_interfaces/msg/Target"
+    - "visualization_msgs/msg/MarkerArray"
+    - "rm_interfaces/msg/Measurement"
+    # tf
+    - "tf2_msgs/msg/TFMessage"
+    - "tf2_msgs/msg/TFMessage"
+    - "sensor_msgs/msg/JointState"
+    # robot
+    - "std_msgs/msg/String"
+    # parameter
+    - "rcl_interfaces/msg/ParameterEvent"

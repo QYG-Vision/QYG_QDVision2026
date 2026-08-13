@@ -1,0 +1,21 @@
+.vscode/
+.cache/
+.vscode/
+.claude/
+# 编译产物
+build/
+install/
+log/
+MvSdkLog/
+MvSDKLog/
+$(ALLUSERSPROFILE)/
+# 运行产物
+record*/
+qd2026-log/
+watchdog/
+rosbag/
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+

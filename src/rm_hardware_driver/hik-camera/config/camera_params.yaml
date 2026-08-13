@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    camera_info_url: package://rm_bringup/config/camera_info.yaml
+
+    acquisition_frame_rate: 200.0   # 相机采集帧率 单位：Hz
+    exposure_time: 1800
+    gain: 16.
+
+    camera_name: "narrow_stereo"  
+    target_frame: "camera_optical_frame"  
+    recording: false    #是否录制
+
+    pixel_format: "BayerRG8"        # Recommended Option: "RGB8Packed", "BayerRG8"
+    adc_bit_depth: "ADCBitDepth_8"         # If using "BayerRG8", ADCBitDepth_8 or ADCBitDepth_12
+
+    use_DeviceSerialNumber: false    #是否使用序列号查找相机
+    DeviceSerialNumber: "DA1564615" # 相机序列号 DA1564615  DA1041822 
+
+    
+   

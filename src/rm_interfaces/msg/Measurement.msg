@@ -1,0 +1,9 @@
+float64 x
+float64 y
+float64 z
+float64 yaw
+float64 armor_pitch
+float64 armor_roll
+float64 center_yaw
+float64 pitch
+float64 distance

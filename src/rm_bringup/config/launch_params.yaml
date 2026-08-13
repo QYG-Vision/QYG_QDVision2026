@@ -1,0 +1,33 @@
+gimbal2camera:
+  xyz: "\"0.0461892 0.0 -0.0603874\""
+  rpy: "\"0.0 0.091 0.0\""
+
+#第二个头的gimbal2camera
+  xyz_: "\"0 0 0\""
+  rpy_: "\"0 0 0\""
+
+# 设置启动参数
+namespace: ""
+# 图像获取方式
+# true: 状态机线程模式(image_callback) false: 话题订阅模式(imageCallback)
+use_state_machine_camera: true
+# true: 英雄解算 false: 传统解算
+hero_solver: false
+# true: 开启打符 false：关闭打符,会设置 serial_driver 协议为 hero
+rune: false
+# true: 启动导航tf false：不启动导航tf
+navigation: false
+# true: 开启录包记录视频和串口信息 false：关闭录包
+record: false
+# true: 开启rosbag录制 false：关闭
+auto_record: true
+# true: 使用视频文件作为图像输入 false：使用物理相机
+video_player: false
+# true: 使用虚拟串口数据 false：使用物理串口
+virtual_serial: false
+# true: 开启回放模式，会关闭 video_player / virtual_serial / 物理相机 / 物理串口 false：关闭回放模式
+replay: false
+# true: 启用 dynamic_camera_tf 调参节点 false：禁用
+enable_dynamic_camera_tf: false
+# true: 启动 gimbal2camera pitch 自动标定节点 false：不启动
+enable_pitch_calibration: false

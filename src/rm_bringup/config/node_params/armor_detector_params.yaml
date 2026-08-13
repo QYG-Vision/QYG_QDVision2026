@@ -1,0 +1,36 @@
+/**:
+  ros__parameters:
+    debug: false
+    target_frame: odom
+    detect_color: 0
+    binary_thres: 80
+    max_yaw_angle: 60.0
+    device: "GPU"
+
+    detector: yolo # tradition ：使用opencv识别  yolo : 使用神经网络识别
+    use_pca: false # 使用PCA算法矫正灯条的角点
+    use_ba: false # 使用BA优化算法求解装甲板的Yaw角，已废弃
+
+    light.min_ratio: 0.0001
+    light.max_ratio: 1.0
+    light.max_angle: 45.0
+    light.color_diff_thresh: 20
+    armor.min_light_ratio: 0.8
+    armor.min_small_center_distance: 0.8
+    armor.max_small_center_distance: 3.5
+    armor.min_large_center_distance: 3.5
+    armor.max_large_center_distance: 8.0
+    armor.max_angle: 35.0
+
+    classifier_threshold: 0.7
+    ignore_classes: ["negative"]
+
+    yolo.conf_threshold: 0.65
+    yolo.nms_threshold: 0.45
+    yolo.min_large_center_distance: 3.5
+
+    enable_record: false
+    record_fps: 60.0
+    record_width: 1440
+    record_height: 1080
+    record_dir: "/ros_ws/record"
