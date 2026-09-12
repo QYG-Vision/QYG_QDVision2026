@@ -31,3 +31,5 @@ replay: false
 enable_dynamic_camera_tf: false
 # true: 启动 gimbal2camera pitch 自动标定节点 false：不启动
 enable_pitch_calibration: false
+# true: 启动 Foxglove WebSocket 桥接，默认端口 8765
+foxglove_bridge: false
