@@ -4,7 +4,8 @@
     child_frame_id: gimbal_link
     timestamp_offset: 0.000
     port_name: "/dev/rm_usb0"
-    baud_rate: 115200  # 波特率 921600, 115200, 19200, 9600, 4800, 2400, 1200, 300
-    protocol: "hero"  # ProtocolInfantry: infantry , DefaultProtocol: hero air , ProtocolSentry: sentry
-    enable_data_print: false # 改为true将会打印从串口读出来的16进制数据
-
+    baud_rate: 921600  # QYG 哨兵电控使用 921600
+    protocol: "qyg_sentry"  # QYG 哨兵兼容协议；原 QD 协议仍可选 infantry/hero/air/sentry
+    qyg_enemy_color: "blue"  # 敌方颜色，可选 red 或 blue
+    qyg_bullet_speed: 15.0  # QYG 回传帧没有弹速，先使用该默认值（m/s）
+    enable_data_print: false # 改为 true 将打印串口收发调试信息

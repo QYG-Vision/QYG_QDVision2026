@@ -55,6 +55,11 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_fixed_packet_tool test/test_fixed_packet_tool.cpp)
   target_link_libraries(test_fixed_packet_tool ${PROJECT_NAME})
+
+  ament_add_gtest(test_qyg_protocol test/test_qyg_protocol.cpp)
+  # 协议解析仅依赖标准库；直接编译实现，避免单测启动时加载 Hik 相机动态库。
+  target_sources(test_qyg_protocol PRIVATE src/protocol/qyg_protocol.cpp)
+  target_include_directories(test_qyg_protocol PRIVATE include)
 endif()
 
 #############

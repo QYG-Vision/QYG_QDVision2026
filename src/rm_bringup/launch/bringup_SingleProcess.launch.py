@@ -35,6 +35,11 @@ def generate_launch_description():
     def get_params(name):
         return os.path.join(get_package_share_directory('rm_bringup'), 'config', 'node_params', '{}_params.yaml'.format(name))
 
+    def get_serial_protocol():
+        with open(get_params('serial_driver'), encoding='utf-8') as serial_file:
+            serial_config = yaml.safe_load(serial_file) or {}
+        return serial_config.get('/**', {}).get('ros__parameters', {}).get('protocol', 'infantry')
+
     # --- 准备 ComposableNode 列表 ---
     composable_nodes = []
 
@@ -98,7 +103,8 @@ def generate_launch_description():
             ))
         else:
             serial_driver_params = [get_params('serial_driver')]
-            if not launch_params.get('rune', True):
+            # 非打符模式默认切换英雄协议，但不能覆盖 QYG 哨兵协议。
+            if not launch_params.get('rune', True) and get_serial_protocol() != 'qyg_sentry':
                 serial_driver_params.append({'protocol': 'hero'})
 
             composable_nodes.append(ComposableNode(

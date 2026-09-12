@@ -22,6 +22,7 @@
 #include "rm_serial_driver/protocol.hpp"
 #include "rm_serial_driver/protocol/default_protocol.hpp"
 #include "rm_serial_driver/protocol/infantry_protocol.hpp"
+#include "rm_serial_driver/protocol/qyg_sentry_protocol.hpp"
 #include "rm_serial_driver/protocol/sentry_protocol.hpp"
 
 namespace qd::serial_driver {
@@ -45,6 +46,9 @@ public:
     }
     if (protocol_type == "sentry") {
       return std::make_unique<protocol::ProtocolSentry>(port_name, speed, enable_data_print);
+    }
+    if (protocol_type == "qyg_sentry") {
+      return std::make_unique<protocol::ProtocolQygSentry>(port_name, speed, enable_data_print);
     }
 
     return nullptr;
