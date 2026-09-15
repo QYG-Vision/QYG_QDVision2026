@@ -28,7 +28,7 @@ services:
       - /dev:/dev # 直接挂载整个 /dev 目录，确保容器内能访问所有设备（如摄像头、串口等）
       # 注意：在 Compose 中最好用 ${HOME} 替代 ~，它会自动获取你当前用户的家目录
       - ${HOME}/.ros:/root/.ros # 保存日志到宿主机
-      - ${HOME}/rmvision2025:/ros_ws  # 自瞄代码
+      - ${HOME}/QD_Vision26:/ros_ws  # QLF-SENTRY 仓库
       - ${HOME}/.vscode-server/:/root/.vscode-server # 防止每次重建容器后 vscode 插件、服务器丢失
 
     # 启动命令 (对应最后那一串)

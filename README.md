@@ -132,6 +132,9 @@ ros2 launch rm_bringup bringup_SingleProcess.launch.py
 
 ### Docker
 
+Docker 容器将宿主机的 `${HOME}/QD_Vision26` 挂载到容器内的`/ros_ws`，并以`/ros_ws`作为工作目录。
+修改挂载配置后，需执行`docker compose down`和`docker compose up -d --build`重建容器后才会生效。
+
 注释`docker-compose.yaml`里的`command`
 
 修改前
