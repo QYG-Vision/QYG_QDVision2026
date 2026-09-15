@@ -52,6 +52,13 @@ struct QygSendFrame
 };
 #pragma pack(pop)
 
+/** @brief QYG 回传角转换到视觉内部约定后的云台角度，单位为度。 */
+struct GimbalFeedbackAngles {
+    float roll_degrees { 0.0F };
+    float pitch_degrees { 0.0F };
+    float yaw_degrees { 0.0F };
+};
+
 static_assert(sizeof(float) == 4, "QYG protocol requires 32-bit float");
 static_assert(std::numeric_limits<float>::is_iec559, "QYG protocol requires IEEE-754 float");
 static_assert(sizeof(QygReceiveFrame) == 51, "QYG receive frame must be 51 bytes");
@@ -107,6 +114,13 @@ uint8_t mapToQdVisionMode(QygVisionMode mode, bool enemy_is_red);
  * @return 弧度值。
  */
 float degreesToRadians(float degrees);
+
+/**
+ * @brief 将 QYG 回传云台角映射为视觉内部使用的角度。
+ * @param frame QYG 电控回传帧，其中 pitch 以抬头为正。
+ * @return 单位为度且 pitch 以抬头为正的云台角度。
+ */
+GimbalFeedbackAngles decodeGimbalFeedback(const QygReceiveFrame& frame);
 
 /**
  * @brief 构造并校验 QYG 下发帧。

@@ -62,6 +62,19 @@ TEST(QygProtocol, qdDegreesConvertToQygRadians)
   EXPECT_NEAR(qyg::degreesToRadians(-90.0F), -PI / 2.0F, 1e-6F);
 }
 
+TEST(QygProtocol, decodeGimbalFeedbackKeepsHeadUpPitchPositive) {
+    qyg::QygReceiveFrame frame;
+    frame.vroll = 1.5F;
+    frame.vpitch = 10.0F;
+    frame.vyaw = -20.0F;
+
+    const auto angles = qyg::decodeGimbalFeedback(frame);
+
+    EXPECT_FLOAT_EQ(angles.roll_degrees, 1.5F);
+    EXPECT_FLOAT_EQ(angles.pitch_degrees, 10.0F);
+    EXPECT_FLOAT_EQ(angles.yaw_degrees, -20.0F);
+}
+
 TEST(QygProtocol, qygModesMapToQdModesWithEnemyColor)
 {
   EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::AUTO_AIM, true), 0U);

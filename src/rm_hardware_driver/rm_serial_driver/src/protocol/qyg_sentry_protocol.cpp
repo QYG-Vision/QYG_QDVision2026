@@ -87,10 +87,10 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       const auto task_mode = qyg::getVisionMode(frame.sentry_state);
       qyg_mode_.store(task_mode);
       data.mode = qyg::mapToQdVisionMode(task_mode, enemy_is_red_.load());
-      data.roll = frame.vroll;
-      // SerialDriverNode 会对 pitch 再取反，因此这里沿用 QD 原协议的符号约定。
-      data.pitch = -frame.vpitch;
-      data.yaw = frame.vyaw;
+      const auto gimbal_angles = qyg::decodeGimbalFeedback(frame);
+      data.roll = gimbal_angles.roll_degrees;
+      data.pitch = gimbal_angles.pitch_degrees;
+      data.yaw = gimbal_angles.yaw_degrees;
       data.bullet_speed = bullet_speed_.load();
       // QYG 帧没有 MCU 时间戳，置零后 SerialDriverNode 会使用电脑当前时间。
       data.mcu_timestamp = 0;
