@@ -30,6 +30,8 @@ struct QygReceiveFrame
   float vyaw{0.0F};
   float vpitch{0.0F};
   float vroll{0.0F};
+  float bullet_speed{0.0F};      // 实时弹速，单位为米每秒
+  uint32_t mcu_timestamp{0};     // 云台角采样时刻，单位为毫秒
   uint16_t crc16{0};
 };
 
@@ -43,6 +45,9 @@ struct QygSendFrame
   float linear_x{0.0F};
   float linear_y{0.0F};
   float angular_z{0.0F};
+  float distance{0.0F};          // 目标距离，单位为米；负值表示无有效目标
+  uint8_t target_id{0};          // 目标装甲板类型编号
+  float target_v_yaw{0.0F};      // 目标自转角速度，单位为弧度每秒
   uint16_t crc16{0};
 };
 #pragma pack(pop)
@@ -56,7 +61,7 @@ struct GimbalFeedbackAngles {
 
 static_assert(sizeof(float) == 4, "QYG protocol requires 32-bit float");
 static_assert(std::numeric_limits<float>::is_iec559, "QYG protocol requires IEEE-754 float");
-static_assert(sizeof(QygReceiveFrame) == 31, "QYG receive frame must be 31 bytes");
+static_assert(sizeof(QygReceiveFrame) == 39, "QYG receive frame must be 39 bytes");
 static_assert(offsetof(QygReceiveFrame, current_mode) == 2, "Invalid current_mode offset");
 static_assert(offsetof(QygReceiveFrame, actual_vx) == 3, "Invalid actual_vx offset");
 static_assert(offsetof(QygReceiveFrame, actual_vy) == 7, "Invalid actual_vy offset");
@@ -65,15 +70,20 @@ static_assert(offsetof(QygReceiveFrame, sentry_state) == 15, "Invalid sentry_sta
 static_assert(offsetof(QygReceiveFrame, vyaw) == 17, "Invalid vyaw offset");
 static_assert(offsetof(QygReceiveFrame, vpitch) == 21, "Invalid vpitch offset");
 static_assert(offsetof(QygReceiveFrame, vroll) == 25, "Invalid vroll offset");
-static_assert(offsetof(QygReceiveFrame, crc16) == 29, "Invalid receive CRC offset");
-static_assert(sizeof(QygSendFrame) == 25, "QYG send frame must be 25 bytes");
+static_assert(offsetof(QygReceiveFrame, bullet_speed) == 29, "Invalid bullet_speed offset");
+static_assert(offsetof(QygReceiveFrame, mcu_timestamp) == 33, "Invalid mcu_timestamp offset");
+static_assert(offsetof(QygReceiveFrame, crc16) == 37, "Invalid receive CRC offset");
+static_assert(sizeof(QygSendFrame) == 34, "QYG send frame must be 34 bytes");
 static_assert(offsetof(QygSendFrame, mode) == 2, "Invalid mode offset");
 static_assert(offsetof(QygSendFrame, yaw) == 3, "Invalid yaw offset");
 static_assert(offsetof(QygSendFrame, pitch) == 7, "Invalid pitch offset");
 static_assert(offsetof(QygSendFrame, linear_x) == 11, "Invalid linear_x offset");
 static_assert(offsetof(QygSendFrame, linear_y) == 15, "Invalid linear_y offset");
 static_assert(offsetof(QygSendFrame, angular_z) == 19, "Invalid angular_z offset");
-static_assert(offsetof(QygSendFrame, crc16) == 23, "Invalid send CRC offset");
+static_assert(offsetof(QygSendFrame, distance) == 23, "Invalid distance offset");
+static_assert(offsetof(QygSendFrame, target_id) == 27, "Invalid target_id offset");
+static_assert(offsetof(QygSendFrame, target_v_yaw) == 28, "Invalid target_v_yaw offset");
+static_assert(offsetof(QygSendFrame, crc16) == 32, "Invalid send CRC offset");
 
 /**
  * @brief 计算 QYG 使用的 CRC-16/DECT 校验值。
@@ -121,10 +131,14 @@ GimbalFeedbackAngles decodeGimbalFeedback(const QygReceiveFrame& frame);
  * @param linear_x 底盘 x 速度，限幅到 [-1, 1]。
  * @param linear_y 底盘 y 速度，限幅到 [-1, 1]。
  * @param angular_z 底盘角速度，限幅到 [-1, 1]。
+ * @param distance 目标距离，单位为米；负值表示当前无有效目标。
+ * @param target_id 目标装甲板类型编号。
+ * @param target_v_yaw 目标自转角速度，单位为弧度每秒。
  * @return 带有 CRC 的 QYG 下发帧。
  */
 QygSendFrame makeSendFrame(
-  bool control, bool fire, float yaw, float pitch, float linear_x, float linear_y, float angular_z);
+  bool control, bool fire, float yaw, float pitch, float linear_x, float linear_y, float angular_z,
+  float distance, uint8_t target_id, float target_v_yaw);
 
 /**
  * @brief 校验并解析一帧 QYG 回传数据。

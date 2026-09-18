@@ -54,12 +54,14 @@ GimbalFeedbackAngles decodeGimbalFeedback(const QygReceiveFrame& frame) {
 }
 
 QygSendFrame makeSendFrame(
-  bool control, bool fire, float yaw, float pitch, float linear_x, float linear_y, float angular_z)
+  bool control, bool fire, float yaw, float pitch, float linear_x, float linear_y, float angular_z,
+  float distance, uint8_t target_id, float target_v_yaw)
 {
   QygSendFrame frame;
   if (
     !std::isfinite(yaw) || !std::isfinite(pitch) || !std::isfinite(linear_x) ||
-    !std::isfinite(linear_y) || !std::isfinite(angular_z)) {
+    !std::isfinite(linear_y) || !std::isfinite(angular_z) || !std::isfinite(distance) ||
+    !std::isfinite(target_v_yaw)) {
     frame.crc16 = crc16(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - 2);
     return frame;
   }
@@ -72,6 +74,9 @@ QygSendFrame makeSendFrame(
   frame.linear_x = -std::clamp(linear_x, -1.0F, 1.0F);
   frame.linear_y = -std::clamp(linear_y, -1.0F, 1.0F);
   frame.angular_z = -std::clamp(angular_z, -1.0F, 1.0F);
+  frame.distance = distance;
+  frame.target_id = target_id;
+  frame.target_v_yaw = target_v_yaw;
   frame.crc16 = crc16(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - 2);
   return frame;
 }

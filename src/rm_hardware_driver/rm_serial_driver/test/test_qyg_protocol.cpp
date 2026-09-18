@@ -10,16 +10,19 @@ namespace qyg = qd::serial_driver::protocol::qyg;
 
 TEST(QygProtocol, frameSizeAndOffsets)
 {
-  EXPECT_EQ(sizeof(qyg::QygSendFrame), 25U);
+  EXPECT_EQ(sizeof(qyg::QygSendFrame), 34U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, mode), 2U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, yaw), 3U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, pitch), 7U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, linear_x), 11U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, linear_y), 15U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, angular_z), 19U);
-  EXPECT_EQ(offsetof(qyg::QygSendFrame, crc16), 23U);
+  EXPECT_EQ(offsetof(qyg::QygSendFrame, distance), 23U);
+  EXPECT_EQ(offsetof(qyg::QygSendFrame, target_id), 27U);
+  EXPECT_EQ(offsetof(qyg::QygSendFrame, target_v_yaw), 28U);
+  EXPECT_EQ(offsetof(qyg::QygSendFrame, crc16), 32U);
 
-  EXPECT_EQ(sizeof(qyg::QygReceiveFrame), 31U);
+  EXPECT_EQ(sizeof(qyg::QygReceiveFrame), 39U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, current_mode), 2U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vx), 3U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vy), 7U);
@@ -28,7 +31,9 @@ TEST(QygProtocol, frameSizeAndOffsets)
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vyaw), 17U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vpitch), 21U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vroll), 25U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, crc16), 29U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, bullet_speed), 29U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, mcu_timestamp), 33U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, crc16), 37U);
 }
 
 TEST(QygProtocol, officialCrcCheckValue)
@@ -40,9 +45,10 @@ TEST(QygProtocol, officialCrcCheckValue)
 TEST(QygProtocol, makeSendFrameUsesQygUnitsAndSigns)
 {
   constexpr float PI = 3.14159265358979323846F;
-  const auto frame = qyg::makeSendFrame(true, true, 4.0F, -4.0F, 0.25F, -0.5F, 2.0F);
+  const auto frame =
+    qyg::makeSendFrame(true, true, 4.0F, -4.0F, 0.25F, -0.5F, 2.0F, 3.5F, 7U, 1.25F);
 
-  EXPECT_EQ(sizeof(frame), 25U);
+  EXPECT_EQ(sizeof(frame), 34U);
   EXPECT_EQ(frame.header[0], 'Q');
   EXPECT_EQ(frame.header[1], 'Y');
   EXPECT_EQ(frame.mode, 2U);
@@ -51,6 +57,9 @@ TEST(QygProtocol, makeSendFrameUsesQygUnitsAndSigns)
   EXPECT_FLOAT_EQ(frame.linear_x, -0.25F);
   EXPECT_FLOAT_EQ(frame.linear_y, 0.5F);
   EXPECT_FLOAT_EQ(frame.angular_z, -1.0F);
+  EXPECT_FLOAT_EQ(frame.distance, 3.5F);
+  EXPECT_EQ(frame.target_id, 7U);
+  EXPECT_FLOAT_EQ(frame.target_v_yaw, 1.25F);
   EXPECT_EQ(frame.crc16, qyg::crc16(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - 2));
 }
 
@@ -89,12 +98,14 @@ TEST(QygProtocol, qygModesMapToQdModesWithEnemyColor)
 
 TEST(QygProtocol, makeSendFrameMatchesKnownBytes)
 {
-  constexpr std::array<uint8_t, 25> EXPECTED{
+  constexpr std::array<uint8_t, 34> EXPECTED{
     0x51, 0x59, 0x01, 0x92, 0x0A, 0x06, 0x3F, 0xC2, 0xB8, 0xB2, 0xBD, 0xCD, 0xCC,
-    0x4C, 0xBE, 0x9A, 0x99, 0x99, 0x3E, 0xCD, 0xCC, 0xCC, 0xBE, 0xE7, 0xA0,
+    0x4C, 0xBE, 0x9A, 0x99, 0x99, 0x3E, 0xCD, 0xCC, 0xCC, 0xBE, 0x00, 0x00, 0x90, 0x40,
+    0x06, 0x00, 0x00, 0xA0, 0xBF, 0x63, 0xA9,
   };
   const auto frame = qyg::makeSendFrame(
-    true, false, qyg::degreesToRadians(30.0F), qyg::degreesToRadians(-5.0F), 0.2F, -0.3F, 0.4F);
+    true, false, qyg::degreesToRadians(30.0F), qyg::degreesToRadians(-5.0F), 0.2F, -0.3F,
+    0.4F, 4.5F, 6U, -1.25F);
   EXPECT_EQ(std::memcmp(&frame, EXPECTED.data(), EXPECTED.size()), 0);
 }
 
@@ -109,6 +120,8 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   frame.vyaw = 12.5F;
   frame.vpitch = -3.25F;
   frame.vroll = 1.5F;
+  frame.bullet_speed = 23.5F;
+  frame.mcu_timestamp = 123456U;
   frame.crc16 =
     qyg::crc16(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - sizeof(frame.crc16));
 
@@ -125,6 +138,8 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   EXPECT_FLOAT_EQ(parsed->vyaw, 12.5F);
   EXPECT_FLOAT_EQ(parsed->vpitch, -3.25F);
   EXPECT_FLOAT_EQ(parsed->vroll, 1.5F);
+  EXPECT_FLOAT_EQ(parsed->bullet_speed, 23.5F);
+  EXPECT_EQ(parsed->mcu_timestamp, 123456U);
 
   bytes[10] ^= 0x01U;
   EXPECT_FALSE(qyg::parseReceiveFrame(bytes.data(), bytes.size()).has_value());

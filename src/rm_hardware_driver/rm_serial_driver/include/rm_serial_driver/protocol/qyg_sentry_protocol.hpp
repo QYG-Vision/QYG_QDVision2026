@@ -56,7 +56,6 @@ private:
   geometry_msgs::msg::Twist latest_chassis_;
   std::atomic<qyg::QygVisionMode> qyg_mode_{qyg::QygVisionMode::IDLE};
   std::atomic<bool> enemy_is_red_{false};
-  std::atomic<float> bullet_speed_{15.0F};
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr actual_velocity_pub_;
 };
 

@@ -51,12 +51,15 @@ void ProtocolQygSentry::sendLatestLocked()
 {
   const auto task_mode = qyg_mode_.load();
   const bool control = latest_gimbal_.distance >= 0.0 && task_mode != qyg::QygVisionMode::IDLE;
+  const float distance = control ? static_cast<float>(latest_gimbal_.distance) : -1.0F;
+  const uint8_t target_id = control ? armor_id_to_uint8(latest_gimbal_.id) : 0U;
+  const float target_v_yaw = control ? static_cast<float>(latest_gimbal_.target_v_yaw) : 0.0F;
   const auto frame = qyg::makeSendFrame(
     control, control && latest_gimbal_.fire_advice,
     qyg::degreesToRadians(static_cast<float>(latest_gimbal_.yaw)),
     qyg::degreesToRadians(static_cast<float>(latest_gimbal_.pitch)),
     static_cast<float>(latest_chassis_.linear.x), static_cast<float>(latest_chassis_.linear.y),
-    static_cast<float>(latest_chassis_.angular.z));
+    static_cast<float>(latest_chassis_.angular.z), distance, target_id, target_v_yaw);
 
   if (enable_data_print_) {
     const auto * bytes = reinterpret_cast<const uint8_t *>(&frame);
@@ -65,7 +68,7 @@ void ProtocolQygSentry::sendLatestLocked()
       stream << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
              << static_cast<int>(bytes[i]) << ' ';
     }
-    FYT_INFO("serial_driver", "QYG TX (25B): {}", stream.str());
+    FYT_INFO("serial_driver", "QYG TX ({}B): {}", sizeof(frame), stream.str());
   }
 
   if (!transporter_->isOpen() && !transporter_->open()) {
@@ -91,9 +94,8 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       data.roll = gimbal_angles.roll_degrees;
       data.pitch = gimbal_angles.pitch_degrees;
       data.yaw = gimbal_angles.yaw_degrees;
-      data.bullet_speed = bullet_speed_.load();
-      // QYG 帧没有 MCU 时间戳，置零后 SerialDriverNode 会使用电脑当前时间。
-      data.mcu_timestamp = 0;
+      data.bullet_speed = frame.bullet_speed;
+      data.mcu_timestamp = frame.mcu_timestamp;
       data.current_mode = frame.current_mode;
       data.actual_vx = frame.actual_vx;
       data.actual_vy = frame.actual_vy;
@@ -135,8 +137,6 @@ std::vector<rclcpp::SubscriptionBase::SharedPtr> ProtocolQygSentry::getSubscript
   if (enemy_color != "red" && enemy_color != "blue") {
     FYT_WARN("serial_driver", "Invalid qyg_enemy_color '{}', using blue", enemy_color);
   }
-  bullet_speed_.store(
-    static_cast<float>(node->declare_parameter<double>("qyg_bullet_speed", 15.0)));
   actual_velocity_pub_ =
     node->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel_real", rclcpp::SensorDataQoS());
 
