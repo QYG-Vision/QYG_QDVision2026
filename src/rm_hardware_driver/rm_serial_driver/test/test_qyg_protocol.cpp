@@ -19,16 +19,16 @@ TEST(QygProtocol, frameSizeAndOffsets)
   EXPECT_EQ(offsetof(qyg::QygSendFrame, angular_z), 19U);
   EXPECT_EQ(offsetof(qyg::QygSendFrame, crc16), 23U);
 
-  EXPECT_EQ(sizeof(qyg::QygReceiveFrame), 51U);
+  EXPECT_EQ(sizeof(qyg::QygReceiveFrame), 31U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, current_mode), 2U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vx), 3U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vy), 7U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_wz), 11U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, sentry_state), 35U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vyaw), 37U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vpitch), 41U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vroll), 45U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, crc16), 49U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, sentry_state), 15U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vyaw), 17U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vpitch), 21U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vroll), 25U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, crc16), 29U);
 }
 
 TEST(QygProtocol, officialCrcCheckValue)
@@ -105,11 +105,6 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   frame.actual_vx = 1.25F;
   frame.actual_vy = -2.5F;
   frame.actual_wz = 0.75F;
-  frame.imu_yaw = 10.0F;
-  frame.imu_pitch = -5.0F;
-  frame.yaw_angular = 0.1F;
-  frame.pitch_angular = -0.2F;
-  frame.odom_x = 12.5F;
   frame.sentry_state = static_cast<uint16_t>((123U << 2U) | 3U);
   frame.vyaw = 12.5F;
   frame.vpitch = -3.25F;
@@ -126,11 +121,6 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   EXPECT_FLOAT_EQ(parsed->actual_vx, 1.25F);
   EXPECT_FLOAT_EQ(parsed->actual_vy, -2.5F);
   EXPECT_FLOAT_EQ(parsed->actual_wz, 0.75F);
-  EXPECT_FLOAT_EQ(parsed->imu_yaw, 10.0F);
-  EXPECT_FLOAT_EQ(parsed->imu_pitch, -5.0F);
-  EXPECT_FLOAT_EQ(parsed->yaw_angular, 0.1F);
-  EXPECT_FLOAT_EQ(parsed->pitch_angular, -0.2F);
-  EXPECT_FLOAT_EQ(parsed->odom_x, 12.5F);
   EXPECT_EQ(parsed->sentry_state >> 2U, 123U);
   EXPECT_FLOAT_EQ(parsed->vyaw, 12.5F);
   EXPECT_FLOAT_EQ(parsed->vpitch, -3.25F);

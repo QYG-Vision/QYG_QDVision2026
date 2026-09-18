@@ -12,9 +12,4 @@ uint8 current_mode
 float32 actual_vx
 float32 actual_vy
 float32 actual_wz
-float32 imu_yaw
-float32 imu_pitch
-float32 yaw_angular
-float32 pitch_angular
-float32 odom_x
 uint16 sentry_state

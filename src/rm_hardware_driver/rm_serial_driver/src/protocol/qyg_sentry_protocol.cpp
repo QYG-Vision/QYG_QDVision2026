@@ -98,11 +98,6 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       data.actual_vx = frame.actual_vx;
       data.actual_vy = frame.actual_vy;
       data.actual_wz = frame.actual_wz;
-      data.imu_yaw = frame.imu_yaw;
-      data.imu_pitch = frame.imu_pitch;
-      data.yaw_angular = frame.yaw_angular;
-      data.pitch_angular = frame.pitch_angular;
-      data.odom_x = frame.odom_x;
       data.sentry_state = frame.sentry_state;
       if (actual_velocity_pub_ != nullptr) {
         geometry_msgs::msg::Twist actual_velocity;
