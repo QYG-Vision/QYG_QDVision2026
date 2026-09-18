@@ -49,8 +49,7 @@ void ProtocolQygSentry::updateChassis(const rm_interfaces::msg::ChassisCmd & dat
 
 void ProtocolQygSentry::sendLatestLocked()
 {
-  const auto task_mode = qyg_mode_.load();
-  const bool control = latest_gimbal_.distance >= 0.0 && task_mode != qyg::QygVisionMode::IDLE;
+  const bool control = latest_gimbal_.distance >= 0.0;
   const float distance = control ? static_cast<float>(latest_gimbal_.distance) : -1.0F;
   const uint8_t target_id = control ? armor_id_to_uint8(latest_gimbal_.id) : 0U;
   const float target_v_yaw = control ? static_cast<float>(latest_gimbal_.target_v_yaw) : 0.0F;
@@ -87,9 +86,22 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
     const auto parsed = stream_parser_.popFrame();
     if (parsed.has_value()) {
       const auto & frame = parsed.value();
-      const auto task_mode = qyg::getVisionMode(frame.sentry_state);
-      qyg_mode_.store(task_mode);
-      data.mode = qyg::mapToQdVisionMode(task_mode, enemy_is_red_.load());
+      const auto qd_mode = qyg::decodeQdVisionMode(frame.current_mode);
+      if (qd_mode.has_value()) {
+        last_valid_qd_mode_ = qd_mode.value();
+        data.mode = qd_mode.value();
+        invalid_mode_reported_ = false;
+      } else {
+        data.mode = last_valid_qd_mode_;
+        if (!invalid_mode_reported_ || last_invalid_mode_ != frame.current_mode) {
+          FYT_WARN(
+            "serial_driver", "Invalid QYG current_mode: {}, keeping QD mode {}",
+            static_cast<unsigned int>(frame.current_mode),
+            static_cast<unsigned int>(last_valid_qd_mode_));
+          last_invalid_mode_ = frame.current_mode;
+          invalid_mode_reported_ = true;
+        }
+      }
       const auto gimbal_angles = qyg::decodeGimbalFeedback(frame);
       data.roll = gimbal_angles.roll_degrees;
       data.pitch = gimbal_angles.pitch_degrees;
@@ -132,11 +144,6 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
 std::vector<rclcpp::SubscriptionBase::SharedPtr> ProtocolQygSentry::getSubscriptions(
   rclcpp::Node::SharedPtr node)
 {
-  const auto enemy_color = node->declare_parameter<std::string>("qyg_enemy_color", "blue");
-  enemy_is_red_.store(enemy_color == "red");
-  if (enemy_color != "red" && enemy_color != "blue") {
-    FYT_WARN("serial_driver", "Invalid qyg_enemy_color '{}', using blue", enemy_color);
-  }
   actual_velocity_pub_ =
     node->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel_real", rclcpp::SensorDataQoS());
 

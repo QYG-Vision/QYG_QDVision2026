@@ -84,16 +84,14 @@ TEST(QygProtocol, decodeGimbalFeedbackKeepsHeadUpPitchPositive) {
     EXPECT_FLOAT_EQ(angles.yaw_degrees, -20.0F);
 }
 
-TEST(QygProtocol, qygModesMapToQdModesWithEnemyColor)
-{
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::AUTO_AIM, true), 0U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::AUTO_AIM, false), 1U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::SMALL_BUFF, true), 2U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::SMALL_BUFF, false), 3U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::BIG_BUFF, true), 4U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::BIG_BUFF, false), 5U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::IDLE, true), 0U);
-  EXPECT_EQ(qyg::mapToQdVisionMode(qyg::QygVisionMode::IDLE, false), 1U);
+TEST(QygProtocol, currentModeUsesQdVisionModeValuesDirectly) {
+    for (uint8_t mode = 0U; mode <= 5U; ++mode) {
+        const auto decoded = qyg::decodeQdVisionMode(mode);
+        ASSERT_TRUE(decoded.has_value());
+        EXPECT_EQ(decoded.value(), mode);
+    }
+    EXPECT_FALSE(qyg::decodeQdVisionMode(6U).has_value());
+    EXPECT_FALSE(qyg::decodeQdVisionMode(0xFFU).has_value());
 }
 
 TEST(QygProtocol, makeSendFrameMatchesKnownBytes)
@@ -112,11 +110,11 @@ TEST(QygProtocol, makeSendFrameMatchesKnownBytes)
 TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
 {
   qyg::QygReceiveFrame frame;
-  frame.current_mode = 7U;
+  frame.current_mode = 4U;
   frame.actual_vx = 1.25F;
   frame.actual_vy = -2.5F;
   frame.actual_wz = 0.75F;
-  frame.sentry_state = static_cast<uint16_t>((123U << 2U) | 3U);
+  frame.sentry_state = 0xD234U;
   frame.vyaw = 12.5F;
   frame.vpitch = -3.25F;
   frame.vroll = 1.5F;
@@ -129,12 +127,13 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   std::memcpy(bytes.data(), &frame, sizeof(frame));
   const auto parsed = qyg::parseReceiveFrame(bytes.data(), bytes.size());
   ASSERT_TRUE(parsed.has_value());
-  EXPECT_EQ(qyg::getVisionMode(parsed->sentry_state), qyg::QygVisionMode::BIG_BUFF);
-  EXPECT_EQ(parsed->current_mode, 7U);
+  ASSERT_TRUE(qyg::decodeQdVisionMode(parsed->current_mode).has_value());
+  EXPECT_EQ(qyg::decodeQdVisionMode(parsed->current_mode).value(), 4U);
+  EXPECT_EQ(parsed->current_mode, 4U);
   EXPECT_FLOAT_EQ(parsed->actual_vx, 1.25F);
   EXPECT_FLOAT_EQ(parsed->actual_vy, -2.5F);
   EXPECT_FLOAT_EQ(parsed->actual_wz, 0.75F);
-  EXPECT_EQ(parsed->sentry_state >> 2U, 123U);
+  EXPECT_EQ(parsed->sentry_state, 0xD234U);
   EXPECT_FLOAT_EQ(parsed->vyaw, 12.5F);
   EXPECT_FLOAT_EQ(parsed->vpitch, -3.25F);
   EXPECT_FLOAT_EQ(parsed->vroll, 1.5F);
@@ -143,6 +142,23 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
 
   bytes[10] ^= 0x01U;
   EXPECT_FALSE(qyg::parseReceiveFrame(bytes.data(), bytes.size()).has_value());
+}
+
+TEST(QygProtocol, sentryStatePreservesAllRawBits) {
+    constexpr std::array<uint16_t, 4> STATES { 0x0000U, 0x1234U, 0xC000U, 0xFFFFU };
+    for (const auto state: STATES) {
+        qyg::QygReceiveFrame frame;
+        frame.sentry_state = state;
+        frame.crc16 = qyg::crc16(
+            reinterpret_cast<const uint8_t*>(&frame),
+            sizeof(frame) - sizeof(frame.crc16)
+        );
+
+        const auto parsed =
+            qyg::parseReceiveFrame(reinterpret_cast<const uint8_t*>(&frame), sizeof(frame));
+        ASSERT_TRUE(parsed.has_value());
+        EXPECT_EQ(parsed->sentry_state, state);
+    }
 }
 
 TEST(QygProtocol, streamParserHandlesNoiseFragmentsAndBadCrc)

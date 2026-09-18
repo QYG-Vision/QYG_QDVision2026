@@ -22,25 +22,12 @@ uint16_t crc16(const uint8_t * data, size_t length)
   return crc;
 }
 
-QygVisionMode getVisionMode(uint16_t sentry_state)
-{
-  return static_cast<QygVisionMode>(sentry_state & 0x0003U);
-}
-
-uint8_t mapToQdVisionMode(QygVisionMode mode, bool enemy_is_red)
-{
-  const uint8_t color_offset = enemy_is_red ? 0U : 1U;
-  switch (mode) {
-    case QygVisionMode::SMALL_BUFF:
-      return static_cast<uint8_t>(2U + color_offset);
-    case QygVisionMode::BIG_BUFF:
-      return static_cast<uint8_t>(4U + color_offset);
-    case QygVisionMode::IDLE:
-    case QygVisionMode::AUTO_AIM:
-    default:
-      // QD 没有 IDLE 枚举，空闲时保持合法模式；控制使能在发送侧单独关闭。
-      return color_offset;
-  }
+std::optional<uint8_t> decodeQdVisionMode(uint8_t current_mode) {
+    constexpr uint8_t MAX_QD_VISION_MODE = 5U;
+    if (current_mode > MAX_QD_VISION_MODE) {
+        return std::nullopt;
+    }
+    return current_mode;
 }
 
 float degreesToRadians(float degrees)

@@ -12,11 +12,11 @@
 | 偏移 | 长度 | 字段 | 类型 | 单位/说明 |
 | ---: | ---: | --- | --- | --- |
 | 0 | 2 | `header` | `uint8[2]` | 固定为 `0x47 0x44`（`GD`） |
-| 2 | 1 | `current_mode` | `uint8` | 电控当前模式；当前仅透传，不参与视觉模式切换 |
+| 2 | 1 | `current_mode` | `uint8` | QD 视觉模式，直接使用 `VisionMode` 的 0～5 编号 |
 | 3 | 4 | `actual_vx` | `float32` | 底盘实际 x 速度，m/s |
 | 7 | 4 | `actual_vy` | `float32` | 底盘实际 y 速度，m/s |
 | 11 | 4 | `actual_wz` | `float32` | 底盘实际角速度，rad/s |
-| 15 | 2 | `sentry_state` | `uint16` | 低两位为视觉任务模式，其余位透传 |
+| 15 | 2 | `sentry_state` | `uint16` | 哨兵状态原始值，16 位不移位、不掩码地透传 |
 | 17 | 4 | `vyaw` | `float32` | 云台 yaw，度 |
 | 21 | 4 | `vpitch` | `float32` | 云台 pitch，度，抬头为正 |
 | 25 | 4 | `vroll` | `float32` | 云台 roll，度 |
@@ -24,17 +24,22 @@
 | 33 | 4 | `mcu_timestamp` | `uint32` | 云台角采样时刻，ms |
 | 37 | 2 | `crc16` | `uint16` | 前 37 字节 CRC，小端序 |
 
-`sentry_state` 低两位定义：
+`current_mode` 与 QD `VisionMode` 直接对位：
 
 | 值 | 模式 |
 | ---: | --- |
-| 0 | `IDLE` |
-| 1 | `AUTO_AIM` |
-| 2 | `SMALL_BUFF` |
-| 3 | `BIG_BUFF` |
+| 0 | `AUTO_AIM_RED` |
+| 1 | `AUTO_AIM_BLUE` |
+| 2 | `SMALL_RUNE_RED` |
+| 3 | `SMALL_RUNE_BLUE` |
+| 4 | `BIG_RUNE_RED` |
+| 5 | `BIG_RUNE_BLUE` |
 
-敌方颜色暂不由串口传输，而是读取 `qyg_enemy_color` 参数。上位机将任务模式和敌方颜色
-组合为 QD 的 `0～5` 视觉模式。
+收到大于 5 的 `current_mode` 时，上位机保持上一次合法模式，不把非法枚举传入 QD
+状态机。相同非法值连续出现时只记录一次警告，恢复合法模式后重新启用告警检测。
+
+`sentry_state` 不再参与视觉模式解析。该字段收到的 16 位数值会原样发布到
+`SerialReceiveData.sentry_state`，以保证原有状态数据的比特位置不变。
 
 `mcu_timestamp` 应与 `vyaw`、`vpitch`、`vroll` 在同一个控制周期采样。
 
@@ -75,8 +80,8 @@
 | 8 | 基地（`base`） |
 | 9 | 负样本（`negative`） |
 
-无有效目标或电控处于 `IDLE` 时，上位机发送 `mode=0`、`distance=-1`、
-`target_id=0`、`target_v_yaw=0`。
+无有效目标时，上位机发送 `mode=0`、`distance=-1`、`target_id=0`、
+`target_v_yaw=0`。QD 没有单独的 `IDLE` 视觉模式，云台控制使能仅由目标距离是否有效决定。
 
 ## CRC 约定
 

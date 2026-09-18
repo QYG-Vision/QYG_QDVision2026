@@ -1,7 +1,6 @@
 #ifndef RM_SERIAL_DRIVER__PROTOCOL__QYG_SENTRY_PROTOCOL_HPP_
 #define RM_SERIAL_DRIVER__PROTOCOL__QYG_SENTRY_PROTOCOL_HPP_
 
-#include <atomic>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -54,8 +53,9 @@ private:
   std::mutex send_mutex_;
   rm_interfaces::msg::GimbalCmd latest_gimbal_;
   geometry_msgs::msg::Twist latest_chassis_;
-  std::atomic<qyg::QygVisionMode> qyg_mode_{qyg::QygVisionMode::IDLE};
-  std::atomic<bool> enemy_is_red_{false};
+  uint8_t last_valid_qd_mode_ { 0U };
+  uint8_t last_invalid_mode_ { 0U };
+  bool invalid_mode_reported_ { false };
   rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr actual_velocity_pub_;
 };
 

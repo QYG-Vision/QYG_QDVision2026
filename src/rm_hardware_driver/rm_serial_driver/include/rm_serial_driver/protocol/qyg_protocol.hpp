@@ -10,13 +10,6 @@
 namespace qd::serial_driver::protocol::qyg
 {
 
-enum class QygVisionMode : uint8_t {
-  IDLE = 0,
-  AUTO_AIM = 1,
-  SMALL_BUFF = 2,
-  BIG_BUFF = 3,
-};
-
 #pragma pack(push, 1)
 /** @brief QYG 电控回传的固定长度串口帧。 */
 struct QygReceiveFrame
@@ -94,19 +87,11 @@ static_assert(offsetof(QygSendFrame, crc16) == 32, "Invalid send CRC offset");
 uint16_t crc16(const uint8_t * data, size_t length);
 
 /**
- * @brief 从哨兵状态字段提取 QYG 视觉模式。
- * @param sentry_state QYG 回传的状态位字段，低两位表示视觉模式。
- * @return 解码后的视觉模式。
+ * @brief 校验并解码与 QD `VisionMode` 直接对位的模式编号。
+ * @param current_mode QYG 回传的当前视觉模式，合法范围为 0～5。
+ * @return 合法时返回原模式编号，否则返回空值。
  */
-QygVisionMode getVisionMode(uint16_t sentry_state);
-
-/**
- * @brief 将 QYG 视觉模式转换为 QD 状态机模式编号。
- * @param mode QYG 视觉模式。
- * @param enemy_is_red 敌方是否为红色。
- * @return QD `VisionMode` 的底层编号。
- */
-uint8_t mapToQdVisionMode(QygVisionMode mode, bool enemy_is_red);
+std::optional<uint8_t> decodeQdVisionMode(uint8_t current_mode);
 
 /**
  * @brief 将角度从度转换为弧度。

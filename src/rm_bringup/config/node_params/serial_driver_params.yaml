@@ -6,5 +6,4 @@
     port_name: "/dev/rm_usb0"
     baud_rate: 921600  # QYG 哨兵电控使用 921600
     protocol: "qyg_sentry"  # QYG 哨兵兼容协议；原 QD 协议仍可选 infantry/hero/air/sentry
-    qyg_enemy_color: "blue"  # 敌方颜色，可选 red 或 blue
     enable_data_print: false # 改为 true 将打印串口收发调试信息
