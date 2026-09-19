@@ -2,11 +2,13 @@ gimbal2camera:
  xyz: "\"0.1178800943 -0.0012824677 0.0599528514\""
  rpy: "\"0.0082292241 0.0366700468 0.0068214048\""
 #第二个头的gimbal2camera
-  xyz_: "\"0 0 0\""
-  rpy_: "\"0 0 0\""
+ xyz_: "\"0 0 0\""
+ rpy_: "\"0 0 0\""
 
 # 设置启动参数
 namespace: ""
+# true: 启动时自动打开装甲板检测效果窗口（需要桌面 DISPLAY 和 X11 授权）
+show_auto_aim_view: true
 # 图像获取方式
 # true: 状态机线程模式(image_callback) false: 话题订阅模式(imageCallback)
 use_state_machine_camera: true
