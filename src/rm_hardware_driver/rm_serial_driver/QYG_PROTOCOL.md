@@ -13,13 +13,13 @@
 | ---: | ---: | --- | --- | --- |
 | 0 | 2 | `header` | `uint8[2]` | 固定为 `0x47 0x44`（`GD`） |
 | 2 | 1 | `current_mode` | `uint8` | QD 视觉模式，直接使用 `VisionMode` 的 0～5 编号 |
-| 3 | 4 | `actual_vx` | `float32` | 底盘实际 x 速度，m/s |
-| 7 | 4 | `actual_vy` | `float32` | 底盘实际 y 速度，m/s |
-| 11 | 4 | `actual_wz` | `float32` | 底盘实际角速度，rad/s |
+| 3 | 4 | `chassis_vx` | `float32` | 底盘实际 x 速度，m/s |
+| 7 | 4 | `chassis_vy` | `float32` | 底盘实际 y 速度，m/s |
+| 11 | 4 | `chassis_wz` | `float32` | 底盘实际角速度，rad/s |
 | 15 | 2 | `sentry_state` | `uint16` | 哨兵状态原始值，16 位不移位、不掩码地透传 |
-| 17 | 4 | `vyaw` | `float32` | 云台 yaw，度 |
-| 21 | 4 | `vpitch` | `float32` | 云台 pitch，度，抬头为正 |
-| 25 | 4 | `vroll` | `float32` | 云台 roll，度 |
+| 17 | 4 | `yaw` | `float32` | 云台 yaw，度 |
+| 21 | 4 | `pitch` | `float32` | 云台 pitch，度，抬头为正 |
+| 25 | 4 | `roll` | `float32` | 云台 roll，度 |
 | 29 | 4 | `bullet_speed` | `float32` | 实时弹速，m/s |
 | 33 | 4 | `mcu_timestamp` | `uint32` | 云台角采样时刻，ms |
 | 37 | 2 | `crc16` | `uint16` | 前 37 字节 CRC，小端序 |
@@ -41,7 +41,7 @@
 `sentry_state` 不再参与视觉模式解析。该字段收到的 16 位数值会原样发布到
 `SerialReceiveData.sentry_state`，以保证原有状态数据的比特位置不变。
 
-`mcu_timestamp` 应与 `vyaw`、`vpitch`、`vroll` 在同一个控制周期采样。
+`mcu_timestamp` 应与 `yaw`、`pitch`、`roll` 在同一个控制周期采样。
 
 ## 视觉发送至电控（34 字节）
 

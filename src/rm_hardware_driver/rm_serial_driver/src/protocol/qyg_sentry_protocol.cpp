@@ -86,6 +86,15 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
     const auto parsed = stream_parser_.popFrame();
     if (parsed.has_value()) {
       const auto & frame = parsed.value();
+      if (enable_data_print_) {
+        const auto * bytes = reinterpret_cast<const uint8_t *>(&frame);
+        std::ostringstream stream;
+        for (size_t i = 0; i < sizeof(frame); ++i) {
+          stream << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+                 << static_cast<int>(bytes[i]) << ' ';
+        }
+        FYT_INFO("serial_driver", "QYG RX frame ({}B): {}", sizeof(frame), stream.str());
+      }
       const auto qd_mode = qyg::decodeQdVisionMode(frame.current_mode);
       if (qd_mode.has_value()) {
         last_valid_qd_mode_ = qd_mode.value();
@@ -109,15 +118,15 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       data.bullet_speed = frame.bullet_speed;
       data.mcu_timestamp = frame.mcu_timestamp;
       data.current_mode = frame.current_mode;
-      data.actual_vx = frame.actual_vx;
-      data.actual_vy = frame.actual_vy;
-      data.actual_wz = frame.actual_wz;
+      data.chassis_vx = frame.chassis_vx;
+      data.chassis_vy = frame.chassis_vy;
+      data.chassis_wz = frame.chassis_wz;
       data.sentry_state = frame.sentry_state;
       if (actual_velocity_pub_ != nullptr) {
         geometry_msgs::msg::Twist actual_velocity;
-        actual_velocity.linear.x = frame.actual_vx;
-        actual_velocity.linear.y = frame.actual_vy;
-        actual_velocity.angular.z = frame.actual_wz;
+        actual_velocity.linear.x = frame.chassis_vx;
+        actual_velocity.linear.y = frame.chassis_vy;
+        actual_velocity.angular.z = frame.chassis_wz;
         actual_velocity_pub_->publish(actual_velocity);
       }
       return true;
@@ -134,7 +143,12 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       return false;
     }
     if (enable_data_print_) {
-      FYT_INFO("serial_driver", "QYG RX chunk: {} bytes", length);
+      std::ostringstream stream;
+      for (int i = 0; i < length; ++i) {
+        stream << std::hex << std::uppercase << std::setfill('0') << std::setw(2)
+               << static_cast<int>(bytes[i]) << ' ';
+      }
+      FYT_INFO("serial_driver", "QYG RX chunk: {} bytes: {}", length, stream.str());
     }
     stream_parser_.append(bytes.data(), static_cast<size_t>(length));
   }

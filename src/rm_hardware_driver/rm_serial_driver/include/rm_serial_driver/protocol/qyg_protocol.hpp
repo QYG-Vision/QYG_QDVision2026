@@ -16,15 +16,15 @@ struct QygReceiveFrame
 {
   uint8_t header[2]{'G', 'D'};
   uint8_t current_mode{0};
-  float actual_vx{0.0F};
-  float actual_vy{0.0F};
-  float actual_wz{0.0F};
+  float chassis_vx{0.0F};  // 电控回传：底盘实际 x 线速度，m/s
+  float chassis_vy{0.0F};  // 电控回传：底盘实际 y 线速度，m/s
+  float chassis_wz{0.0F};  // 电控回传：底盘实际 z 角速度，rad/s
   uint16_t sentry_state{0};
-  float vyaw{0.0F};
-  float vpitch{0.0F};
-  float vroll{0.0F};
-  float bullet_speed{0.0F};      // 实时弹速，单位为米每秒
-  uint32_t mcu_timestamp{0};     // 云台角采样时刻，单位为毫秒
+  float yaw{0.0F};         // 电控回传：云台 yaw 角，度
+  float pitch{0.0F};       // 电控回传：云台 pitch 角，度，抬头为正
+  float roll{0.0F};        // 电控回传：云台 roll 角，度
+  float bullet_speed{0.0F};      // 电控回传：实时弹速，米每秒
+  uint32_t mcu_timestamp{0};     // 电控回传：云台角采样时刻，毫秒
   uint16_t crc16{0};
 };
 
@@ -56,13 +56,13 @@ static_assert(sizeof(float) == 4, "QYG protocol requires 32-bit float");
 static_assert(std::numeric_limits<float>::is_iec559, "QYG protocol requires IEEE-754 float");
 static_assert(sizeof(QygReceiveFrame) == 39, "QYG receive frame must be 39 bytes");
 static_assert(offsetof(QygReceiveFrame, current_mode) == 2, "Invalid current_mode offset");
-static_assert(offsetof(QygReceiveFrame, actual_vx) == 3, "Invalid actual_vx offset");
-static_assert(offsetof(QygReceiveFrame, actual_vy) == 7, "Invalid actual_vy offset");
-static_assert(offsetof(QygReceiveFrame, actual_wz) == 11, "Invalid actual_wz offset");
+static_assert(offsetof(QygReceiveFrame, chassis_vx) == 3, "Invalid chassis_vx offset");
+static_assert(offsetof(QygReceiveFrame, chassis_vy) == 7, "Invalid chassis_vy offset");
+static_assert(offsetof(QygReceiveFrame, chassis_wz) == 11, "Invalid chassis_wz offset");
 static_assert(offsetof(QygReceiveFrame, sentry_state) == 15, "Invalid sentry_state offset");
-static_assert(offsetof(QygReceiveFrame, vyaw) == 17, "Invalid vyaw offset");
-static_assert(offsetof(QygReceiveFrame, vpitch) == 21, "Invalid vpitch offset");
-static_assert(offsetof(QygReceiveFrame, vroll) == 25, "Invalid vroll offset");
+static_assert(offsetof(QygReceiveFrame, yaw) == 17, "Invalid yaw offset");
+static_assert(offsetof(QygReceiveFrame, pitch) == 21, "Invalid pitch offset");
+static_assert(offsetof(QygReceiveFrame, roll) == 25, "Invalid roll offset");
 static_assert(offsetof(QygReceiveFrame, bullet_speed) == 29, "Invalid bullet_speed offset");
 static_assert(offsetof(QygReceiveFrame, mcu_timestamp) == 33, "Invalid mcu_timestamp offset");
 static_assert(offsetof(QygReceiveFrame, crc16) == 37, "Invalid receive CRC offset");

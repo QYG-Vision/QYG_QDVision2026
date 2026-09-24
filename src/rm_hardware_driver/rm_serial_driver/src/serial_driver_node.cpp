@@ -79,8 +79,13 @@ void SerialDriverNode::init() {
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // Param client
+    bool has_rune = this->declare_parameter("has_rune", true);
     for (auto client: protocol_->getClients(this->shared_from_this())) {
         std::string name = client->get_service_name();
+        // 未开启打符时跳过 rune 客户端，避免接收线程死等不存在的服务
+        if (!has_rune && name.find("/rune_") != std::string::npos) {
+            continue;
+        }
         set_mode_clients_.emplace(name, client);
         FYT_INFO("serial_driver", "Create client for service: {}", name);
     }

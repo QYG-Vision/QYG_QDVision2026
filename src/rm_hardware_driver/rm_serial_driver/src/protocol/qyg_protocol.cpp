@@ -37,7 +37,7 @@ float degreesToRadians(float degrees)
 }
 
 GimbalFeedbackAngles decodeGimbalFeedback(const QygReceiveFrame& frame) {
-    return { frame.vroll, frame.vpitch, frame.vyaw };
+    return { frame.roll, frame.pitch, frame.yaw };
 }
 
 QygSendFrame makeSendFrame(

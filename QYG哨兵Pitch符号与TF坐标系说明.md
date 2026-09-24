@@ -67,7 +67,7 @@ pitch 还会受到距离、弹速和弹道模型影响。
 假设云台实际抬头 10°，电控回传：
 
 ```text
-frame.vpitch = +10°
+frame.pitch = +10°
 ```
 
 当前正确链路为：
@@ -136,7 +136,7 @@ QYG 串口层发送前执行：
 原 QYG 接收代码曾执行：
 
 ```cpp
-data.pitch = -frame.vpitch;
+data.pitch = -frame.pitch;
 ```
 
 公共串口节点在写入 TF 时本来就会再取一次负号，因此 QYG 解析层的额外负号会导致：

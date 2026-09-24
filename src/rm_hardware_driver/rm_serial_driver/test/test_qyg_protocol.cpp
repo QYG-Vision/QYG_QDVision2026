@@ -24,13 +24,13 @@ TEST(QygProtocol, frameSizeAndOffsets)
 
   EXPECT_EQ(sizeof(qyg::QygReceiveFrame), 39U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, current_mode), 2U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vx), 3U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_vy), 7U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, actual_wz), 11U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, chassis_vx), 3U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, chassis_vy), 7U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, chassis_wz), 11U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, sentry_state), 15U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vyaw), 17U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vpitch), 21U);
-  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, vroll), 25U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, yaw), 17U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, pitch), 21U);
+  EXPECT_EQ(offsetof(qyg::QygReceiveFrame, roll), 25U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, bullet_speed), 29U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, mcu_timestamp), 33U);
   EXPECT_EQ(offsetof(qyg::QygReceiveFrame, crc16), 37U);
@@ -73,9 +73,9 @@ TEST(QygProtocol, qdDegreesConvertToQygRadians)
 
 TEST(QygProtocol, decodeGimbalFeedbackKeepsHeadUpPitchPositive) {
     qyg::QygReceiveFrame frame;
-    frame.vroll = 1.5F;
-    frame.vpitch = 10.0F;
-    frame.vyaw = -20.0F;
+    frame.roll = 1.5F;
+    frame.pitch = 10.0F;
+    frame.yaw = -20.0F;
 
     const auto angles = qyg::decodeGimbalFeedback(frame);
 
@@ -111,13 +111,13 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
 {
   qyg::QygReceiveFrame frame;
   frame.current_mode = 4U;
-  frame.actual_vx = 1.25F;
-  frame.actual_vy = -2.5F;
-  frame.actual_wz = 0.75F;
+  frame.chassis_vx = 1.25F;
+  frame.chassis_vy = -2.5F;
+  frame.chassis_wz = 0.75F;
   frame.sentry_state = 0xD234U;
-  frame.vyaw = 12.5F;
-  frame.vpitch = -3.25F;
-  frame.vroll = 1.5F;
+  frame.yaw = 12.5F;
+  frame.pitch = -3.25F;
+  frame.roll = 1.5F;
   frame.bullet_speed = 23.5F;
   frame.mcu_timestamp = 123456U;
   frame.crc16 =
@@ -130,13 +130,13 @@ TEST(QygProtocol, parseReceiveFrameChecksHeaderAndCrc)
   ASSERT_TRUE(qyg::decodeQdVisionMode(parsed->current_mode).has_value());
   EXPECT_EQ(qyg::decodeQdVisionMode(parsed->current_mode).value(), 4U);
   EXPECT_EQ(parsed->current_mode, 4U);
-  EXPECT_FLOAT_EQ(parsed->actual_vx, 1.25F);
-  EXPECT_FLOAT_EQ(parsed->actual_vy, -2.5F);
-  EXPECT_FLOAT_EQ(parsed->actual_wz, 0.75F);
+  EXPECT_FLOAT_EQ(parsed->chassis_vx, 1.25F);
+  EXPECT_FLOAT_EQ(parsed->chassis_vy, -2.5F);
+  EXPECT_FLOAT_EQ(parsed->chassis_wz, 0.75F);
   EXPECT_EQ(parsed->sentry_state, 0xD234U);
-  EXPECT_FLOAT_EQ(parsed->vyaw, 12.5F);
-  EXPECT_FLOAT_EQ(parsed->vpitch, -3.25F);
-  EXPECT_FLOAT_EQ(parsed->vroll, 1.5F);
+  EXPECT_FLOAT_EQ(parsed->yaw, 12.5F);
+  EXPECT_FLOAT_EQ(parsed->pitch, -3.25F);
+  EXPECT_FLOAT_EQ(parsed->roll, 1.5F);
   EXPECT_FLOAT_EQ(parsed->bullet_speed, 23.5F);
   EXPECT_EQ(parsed->mcu_timestamp, 123456U);
 
@@ -165,14 +165,14 @@ TEST(QygProtocol, streamParserHandlesNoiseFragmentsAndBadCrc)
 {
   qyg::QygReceiveFrame valid_frame;
   valid_frame.current_mode = 9U;
-  valid_frame.actual_vx = 0.8F;
+  valid_frame.chassis_vx = 0.8F;
   valid_frame.sentry_state = 1U;
-  valid_frame.vyaw = 45.0F;
+  valid_frame.yaw = 45.0F;
   valid_frame.crc16 =
     qyg::crc16(reinterpret_cast<const uint8_t *>(&valid_frame), sizeof(valid_frame) - 2);
 
   auto bad_frame = valid_frame;
-  bad_frame.actual_vx = -99.0F;
+  bad_frame.chassis_vx = -99.0F;
   // 故意不重新计算 CRC，使其成为错误帧。
 
   constexpr std::array<uint8_t, 5> NOISE{0x12, 0x47, 0x00, 0x44, 0xFF};
@@ -188,8 +188,8 @@ TEST(QygProtocol, streamParserHandlesNoiseFragmentsAndBadCrc)
   const auto parsed = parser.popFrame();
   ASSERT_TRUE(parsed.has_value());
   EXPECT_EQ(parsed->current_mode, 9U);
-  EXPECT_FLOAT_EQ(parsed->actual_vx, 0.8F);
-  EXPECT_FLOAT_EQ(parsed->vyaw, 45.0F);
+  EXPECT_FLOAT_EQ(parsed->chassis_vx, 0.8F);
+  EXPECT_FLOAT_EQ(parsed->yaw, 45.0F);
   EXPECT_FALSE(parser.popFrame().has_value());
 }
 

@@ -102,7 +102,8 @@ def generate_launch_description():
                 extra_arguments=[{'use_intra_process_comms': True}]
             ))
         else:
-            serial_driver_params = [get_params('serial_driver')]
+            serial_driver_params = [get_params('serial_driver'),
+                                    {'has_rune': launch_params.get('rune', False)}]
             # 非打符模式默认切换英雄协议，但不能覆盖 QYG 哨兵协议。
             if not launch_params.get('rune', True) and get_serial_protocol() != 'qyg_sentry':
                 serial_driver_params.append({'protocol': 'hero'})

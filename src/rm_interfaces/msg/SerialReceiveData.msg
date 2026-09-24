@@ -9,7 +9,7 @@ JudgeSystemData judge_system_data
 
 # QYG 哨兵专用回传字段；其他协议保持默认值 0
 uint8 current_mode
-float32 actual_vx
-float32 actual_vy
-float32 actual_wz
+float32 chassis_vx
+float32 chassis_vy
+float32 chassis_wz
 uint16 sentry_state
