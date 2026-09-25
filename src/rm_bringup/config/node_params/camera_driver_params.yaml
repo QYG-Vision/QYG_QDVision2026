@@ -1,7 +1,7 @@
 # 6mm相机配置
 camera_6mm:
-  enable_DeviceSerialNumber: false # 是否使用序列号查找，只使用一个相机改为 false
-  device_serial_number: "DA4845979"  # 相机序列号
+  enable_DeviceSerialNumber: true # 按标定时的相机序列号绑定，避免多相机时选错内外参
+  device_serial_number: "DA8739858"  # 本次内外参标定所用相机
   camera_info_url: "package://rm_bringup/config/camera_info.yaml"  # 相机内参文件路径
   camera_name: "camera_6mm"  # 相机名称
   target_frame: "camera_optical_frame"  # 目标frame_id
@@ -43,5 +43,4 @@ camera_8mm:
   # 相机切换阈值（米）
   switch_to_8mm_distance: 0.5  # 距离超过此值时切换到8mm相机
   switch_to_6mm_distance: 3.0  # 距离小于此值时切换回6mm相机
-
 
