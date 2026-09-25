@@ -24,6 +24,7 @@
 #include <memory>
 #include <mutex>
 #include <queue>
+#include <rclcpp/rclcpp.hpp>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -148,7 +149,13 @@ bool FixedPacketTool<capacity>::sendPacket(const FixedPacket<capacity> &packet) 
 
 template <int capacity>
 bool FixedPacketTool<capacity>::recvPacket(FixedPacket<capacity> &packet) {
-  int recv_len = transporter_->read(tmp_buffer_, capacity);
+  int recv_len = 0;
+  while (rclcpp::ok() && recv_len == 0) {
+    recv_len = transporter_->read(tmp_buffer_, capacity);
+  }
+  if (!rclcpp::ok() && recv_len == 0) {
+    return false;
+  }
   if (recv_len > 0) {
     // print data
     if (use_data_print_) {

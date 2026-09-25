@@ -20,6 +20,7 @@
 // System
 #include <errno.h>  /*错误号定义*/
 #include <fcntl.h>  /*文件控制定义*/
+#include <poll.h>
 #include <stdio.h>  /*标准输入输出定义*/
 #include <stdlib.h> /*标准函数库定义*/
 #include <string.h>
@@ -183,9 +184,29 @@ void UartTransporter::close() {
 bool UartTransporter::isOpen() { return is_open_; }
 
 int UartTransporter::read(void *buffer, size_t len) {
-  int ret = ::read(fd_, buffer, len);
-  // tcflush(fd_, TCIFLUSH);
-  return ret;
+  if (fd_ < 0) {
+    error_message_ = "uart is not open";
+    return -1;
+  }
+
+  pollfd poll_fd{fd_, POLLIN, 0};
+  constexpr int READ_TIMEOUT_MS = 100;
+  const int poll_result = ::poll(&poll_fd, 1, READ_TIMEOUT_MS);
+  if (poll_result == 0) {
+    return 0;
+  }
+  if (poll_result < 0) {
+    if (errno == EINTR) {
+      return 0;
+    }
+    error_message_ = ::strerror(errno);
+    return -1;
+  }
+  if ((poll_fd.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+    error_message_ = "uart poll failed";
+    return -1;
+  }
+  return ::read(fd_, buffer, len);
 }
 
 int UartTransporter::write(const void *buffer, size_t len) {

@@ -195,6 +195,9 @@ void SerialDriverNode::listenLoop() {
 
             heartbeat_->publish();
         } else {
+            if (!rclcpp::ok()) {
+                break;
+            }
             auto error_message = protocol_->getErrorMessage();
             error_message = error_message.empty() ? "unknown" : error_message;
             FYT_WARN("serial_driver", "Failed to reveive packet! error message :{}", error_message);

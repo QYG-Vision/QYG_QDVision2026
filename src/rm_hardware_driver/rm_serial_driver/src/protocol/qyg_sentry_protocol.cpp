@@ -137,7 +137,10 @@ bool ProtocolQygSentry::receive(rm_interfaces::msg::SerialReceiveData & data)
       return false;
     }
     const int length = transporter_->read(bytes.data(), bytes.size());
-    if (length <= 0) {
+    if (length == 0) {
+      continue;
+    }
+    if (length < 0) {
       transporter_->close();
       transporter_->open();
       return false;

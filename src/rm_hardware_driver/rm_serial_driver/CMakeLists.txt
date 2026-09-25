@@ -80,6 +80,9 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_mode_sync_config test/test_mode_sync_config.cpp)
   target_link_libraries(test_mode_sync_config ${PROJECT_NAME})
+
+  ament_add_gtest(test_uart_transporter test/test_uart_transporter.cpp)
+  target_link_libraries(test_uart_transporter ${PROJECT_NAME})
 endif()
 
 #############
