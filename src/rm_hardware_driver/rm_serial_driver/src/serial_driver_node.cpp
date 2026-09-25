@@ -14,6 +14,7 @@
 // limitations under the License.
 
 #include "rm_serial_driver/serial_driver_node.hpp"
+#include "rm_serial_driver/mode_sync_config.hpp"
 
 #include <tf2/LinearMath/Matrix3x3.h>
 // std
@@ -78,16 +79,20 @@ void SerialDriverNode::init() {
     timestamp_offset_ = this->declare_parameter("timestamp_offset", 0.0);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
-    // Param client
+    // 模式同步客户端
     bool has_rune = this->declare_parameter("has_rune", true);
-    for (auto client: protocol_->getClients(this->shared_from_this())) {
-        std::string name = client->get_service_name();
-        // 未开启打符时跳过 rune 客户端，避免接收线程死等不存在的服务
-        if (!has_rune && name.find("/rune_") != std::string::npos) {
-            continue;
+    bool enable_mode_sync = this->declare_parameter("enable_mode_sync", true);
+    if (enable_mode_sync) {
+        for (auto client: protocol_->getClients(this->shared_from_this())) {
+            std::string name = client->get_service_name();
+            if (!should_create_mode_client(enable_mode_sync, has_rune, name)) {
+                continue;
+            }
+            set_mode_clients_.emplace(name, client);
+            FYT_INFO("serial_driver", "Create client for service: {}", name);
         }
-        set_mode_clients_.emplace(name, client);
-        FYT_INFO("serial_driver", "Create client for service: {}", name);
+    } else {
+        FYT_INFO("serial_driver", "Vision mode service synchronization is disabled");
     }
 
     // Heartbeat

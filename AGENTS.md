@@ -31,6 +31,12 @@
   - `rm_serial_driver` (`test/test_fixed_packet_tool.cpp`)
 - Run focused tests with `colcon test --packages-select <pkg>` and inspect with `colcon test-result --verbose`.
 
+### Build and verification lessons
+- A first test-first build may fail because the asserted interface is intentionally not implemented yet. Record that expected failure, then distinguish it from later regressions.
+- `ament_auto_add_library(DIRECTORY src)` discovers sources when CMake configures. After adding or deleting a `.cpp` covered by this rule, make the next package build run with `--cmake-force-configure` so the target source list is refreshed.
+- If a full `colcon test` is blocked by pre-existing lint or formatting baseline failures, run and report focused tests plus formatting checks for touched files separately. Do not describe the full package suite as passing.
+- The Docker development container may not include `rg`; use `grep` for in-container filtering rather than treating the missing command as a build or test failure.
+
 ## Code style conventions
 - Follow the repo's `.clang-format` and `.clang-tidy` as the source of truth; do not introduce a local style that conflicts with them.
 - Formatting highlights from `.clang-format`: 4-space indentation, no tabs, 100-column limit, left-aligned pointers/references, one include per line, and sorted includes/using declarations.

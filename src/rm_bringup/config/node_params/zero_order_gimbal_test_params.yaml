@@ -1,0 +1,20 @@
+/**:
+  ros__parameters:
+    # 当前仅实现零阶保持；一阶参数已预留，后续实现后可直接切换模型。
+    response_model: "zero_order"
+    publish_rate_hz: 250.0
+    target_frame: "odom"
+
+    # 发送非负距离使 QYG 协议进入 MODE=1；节点始终将 fire_advice 设为 false。
+    command_distance: 0.0
+    target_id: "0"
+
+    topics:
+      feedback: "serial/receive"
+      target: "zero_order_gimbal/target"
+      command: "armor_solver/cmd_gimbal"
+
+    first_order:
+      # 预留给后续一阶响应模型，当前 zero_order 模式不会使用。
+      time_constant_s: 0.05
+      max_rate_deg_s: 360.0
