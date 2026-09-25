@@ -11,6 +11,12 @@
 - Main runtime launch in this repo is `ros2 launch rm_bringup bringup_SingleProcess.launch.py` (there is no `bringup.launch.py` in `src/rm_bringup/launch/`).
 - `docker-compose.yaml` already points at `Dockerfile` with the correct case. It also binds `${HOME}/rmvision2025` to `/ros_ws`, so adjust that host path if your checkout lives elsewhere.
 
+### Docker workspace ownership
+- `docker exec` normally runs as root. Do not use it to edit or format files under `/ros_ws/src`, otherwise source files can become root-owned and later host-side `apply_patch` edits will fail.
+- Prefer host-side `apply_patch` for source edits. When a container command must rewrite a source file (for example `clang-format -i`), run it as the host UID/GID: `docker exec --user "$(id -u):$(id -g)" rv_devel_ bash -lc 'cd /ros_ws && ...'`.
+- Build output ownership under `build/`, `install/`, and `log/` is unimportant because those directories are generated and ignored; source ownership is not. If a task-created source file is accidentally root-owned, repair only the exact known paths with `docker exec rv_devel_ chown 1000:1000 /ros_ws/<exact-path>`; never recursively `chown` the workspace.
+- Before editing an unexpectedly unwritable source file, inspect ownership with `ls -l <path>` rather than assuming a compiler or patch failure is a code issue.
+
 ## Real package boundaries
 - `src/rm_auto_aim/rm_auto_aim` and `src/rm_rune/rm_rune` are meta-packages; actual nodes live in leaf packages (`armor_detector`, `armor_solver`, `rune_detector`, `rune_solver`).
 - `src/rm_bringup/launch/bringup_SingleProcess.launch.py` is the integration entrypoint: it composes camera/serial/aim/rune/replay/record components into one `component_container_mt`.
@@ -21,6 +27,15 @@
 - In launch logic, `replay: true` forcibly disables state-machine camera, video player, and virtual/physical serial inputs to avoid source conflicts.
 - If both `record` and `auto_record` are true, launch code disables `record` at runtime.
 - `rune: false` changes serial protocol handling (serial params get `protocol: hero`).
+
+### Standalone serial and 0-order gimbal test
+- `ros2 launch rm_bringup zero_order_gimbal_test.launch.py` is deliberately a small hardware test launch: serial driver + zero-order command publisher + Foxglove, without camera, armor, or rune nodes. It is not a replacement for `bringup_SingleProcess.launch.py`.
+- The serial driver normally maps received MCU mode to visual-node `*/set_mode` services. This behavior is controlled by `enable_mode_sync`, whose default is `true` so the main bringup keeps its existing behavior.
+- Any launch that starts `SerialDriverNode` without armor/rune service providers must pass `enable_mode_sync: false`. Otherwise the first valid RX packet can block the serial receive thread in `wait_for_service()`, causing `/serial/receive` and terminal RX output to stop. Setting only `has_rune: false` skips rune services but still leaves armor services waiting.
+- The dedicated zero-order launch sets both `has_rune: false` and `enable_mode_sync: false`. Its expected startup log includes `Vision mode service synchronization is disabled`.
+- A process started before rebuilding keeps its old parameters and executable. Stop it with `Ctrl-C`, source `install/setup.bash`, then relaunch before judging a parameter or code change.
+- Only one process may own `/dev/rm_usb0`. Do not run the standalone zero-order launch and the main bringup together. Also stop stale `zero_order_gimbal_test_node` processes before hardware tests, since multiple publishers to `armor_solver/cmd_gimbal` create conflicting commands.
+- `ros2 param dump /serial_driver` verifies the active node's effective parameters; `ros2 launch ... --show-args` only verifies that launch-file parsing succeeds and does not verify serial I/O.
 
 ## Build/test expectations
 - Many CMake targets compile with `-Wall -Werror` (warnings fail builds); keep changes warning-clean.
@@ -36,6 +51,9 @@
 - `ament_auto_add_library(DIRECTORY src)` discovers sources when CMake configures. After adding or deleting a `.cpp` covered by this rule, make the next package build run with `--cmake-force-configure` so the target source list is refreshed.
 - If a full `colcon test` is blocked by pre-existing lint or formatting baseline failures, run and report focused tests plus formatting checks for touched files separately. Do not describe the full package suite as passing.
 - The Docker development container may not include `rg`; use `grep` for in-container filtering rather than treating the missing command as a build or test failure.
+- Execute CTest from the sourced workspace root, not by manually entering `build/<package>`: `cd /ros_ws && source /opt/ros/humble/setup.bash && source install/setup.bash && ctest --test-dir build/<package> -R '<test-regex>' --output-on-failure`. The latter can lose the workspace Python path and cause `ModuleNotFoundError: ament_cmake_test`, which is an environment setup error rather than a failed gtest assertion.
+- Use `colcon test --packages-select <pkg> --return-code-on-test-failure` for package-level execution, then inspect only the intended result files or run focused CTest when the package has known lint baselines. In this repository, `rm_serial_driver` currently has many pre-existing `clang_format` failures; distinguish those from the gtest result in reports.
+- Build success does not validate a ROS launch's Python syntax. After adding or changing a launch file, run `ros2 launch <package> <file>.launch.py --show-args` from a sourced workspace as a parse-level check; hardware and topic-flow checks still require an actual launch.
 
 ## Code style conventions
 - Follow the repo's `.clang-format` and `.clang-tidy` as the source of truth; do not introduce a local style that conflicts with them.
