@@ -63,6 +63,37 @@ TEST(QygProtocol, makeSendFrameUsesQygUnitsAndSigns)
   EXPECT_EQ(frame.crc16, qyg::crc16(reinterpret_cast<const uint8_t *>(&frame), sizeof(frame) - 2));
 }
 
+TEST(QygProtocol, sendFrameModeMatchesProtocolDefinition)
+{
+  // mode 定义：
+  //   0 = 禁止云台控制和开火
+  //   1 = 允许云台控制，禁止开火
+  //   2 = 允许云台控制和开火
+  const auto mode2 = qyg::makeSendFrame(true, true, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F, 0U, 0.0F);
+  EXPECT_EQ(mode2.mode, 2U);
+
+  const auto mode1 = qyg::makeSendFrame(true, false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F, 0U, 0.0F);
+  EXPECT_EQ(mode1.mode, 1U);
+
+  // control 为 false 时，无论 fire 是否为 true，mode 都必须是 0。
+  const auto mode0_fire_off =
+    qyg::makeSendFrame(false, false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F, 0U, 0.0F);
+  EXPECT_EQ(mode0_fire_off.mode, 0U);
+  const auto mode0_fire_on =
+    qyg::makeSendFrame(false, true, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F, 0U, 0.0F);
+  EXPECT_EQ(mode0_fire_on.mode, 0U);
+}
+
+TEST(QygProtocol, noValidTargetSendsDisableModeAndNeutralFields)
+{
+  // 无有效目标：mode=0、distance=-1、target_id=0、target_v_yaw=0。
+  const auto frame = qyg::makeSendFrame(false, false, 0.0F, 0.0F, 0.0F, 0.0F, 0.0F, -1.0F, 0U, 0.0F);
+  EXPECT_EQ(frame.mode, 0U);
+  EXPECT_FLOAT_EQ(frame.distance, -1.0F);
+  EXPECT_EQ(frame.target_id, 0U);
+  EXPECT_FLOAT_EQ(frame.target_v_yaw, 0.0F);
+}
+
 TEST(QygProtocol, qdDegreesConvertToQygRadians)
 {
   constexpr float PI = 3.14159265358979323846F;

@@ -18,10 +18,22 @@
 
 #include "dummy_transporter.hpp"
 #include "gtest/gtest.h"
+#include "rclcpp/rclcpp.hpp"
 #include "rm_serial_driver/fixed_packet.hpp"
 #include "rm_serial_driver/fixed_packet_tool.hpp"
 
 using namespace qd;
+
+// recvPacket() 内部依赖 rclcpp::ok()，未初始化 rclcpp 时恒为 false，
+// 会导致所有接收测试直接失败，因此需要自定义 main 初始化 rclcpp。
+int main(int argc, char ** argv)
+{
+  rclcpp::init(argc, argv);
+  ::testing::InitGoogleTest(&argc, argv);
+  const int ret = RUN_ALL_TESTS();
+  rclcpp::shutdown();
+  return ret;
+}
 TEST(FixedPacketTool, construct_with_nullptr) {
   EXPECT_THROW(serial_driver::FixedPacketTool<32>(nullptr), std::invalid_argument);
 }
