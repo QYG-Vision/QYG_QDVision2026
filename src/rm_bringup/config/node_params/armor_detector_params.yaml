@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    debug: false
+    debug: true
     target_frame: odom
     detect_color: 0
     binary_thres: 80
