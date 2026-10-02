@@ -996,7 +996,7 @@ void ArmorSolverNode::serialCallback(
         }
     }
 
-    if (bullet_speed <= 10.0) {
+    if (bullet_speed <= 0.0) {
         return;
     }
 
