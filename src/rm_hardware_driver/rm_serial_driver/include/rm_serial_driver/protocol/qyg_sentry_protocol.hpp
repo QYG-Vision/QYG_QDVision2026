@@ -22,8 +22,10 @@ public:
    * @param port_name 串口设备路径。
    * @param speed 串口波特率。
    * @param enable_data_print 是否打印收发字节调试信息。
+   * @param enable_gimbal_control 是否允许视觉控制云台。
    */
-  explicit ProtocolQygSentry(std::string_view port_name, int speed, bool enable_data_print);
+  explicit ProtocolQygSentry(
+    std::string_view port_name, int speed, bool enable_data_print, bool enable_gimbal_control);
   ~ProtocolQygSentry() override;
 
   /** @brief 发送最新云台指令及底盘速度。 */
@@ -49,6 +51,7 @@ private:
 
   TransporterInterface::SharedPtr transporter_;
   bool enable_data_print_{false};
+  bool enable_gimbal_control_{true};
   qyg::QygStreamParser stream_parser_;
   std::mutex send_mutex_;
   rm_interfaces::msg::GimbalCmd latest_gimbal_;

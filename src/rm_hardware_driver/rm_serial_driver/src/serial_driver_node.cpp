@@ -48,10 +48,12 @@ void SerialDriverNode::init() {
     std::string port_name = this->declare_parameter("port_name", "/dev/ttyUSB0");
     std::string protocol_type = this->declare_parameter("protocol", "infantry");
     bool enable_data_print = this->declare_parameter("enable_data_print", false);
+    bool enable_gimbal_control = this->declare_parameter("enable_gimbal_control", true);
     int baud_rate = this->declare_parameter("baud_rate", 115200);
     // Create Protocol
     protocol_ =
-        ProtocolFactory::createProtocol(protocol_type, port_name, baud_rate, enable_data_print);
+        ProtocolFactory::createProtocol(
+            protocol_type, port_name, baud_rate, enable_data_print, enable_gimbal_control);
     if (protocol_ == nullptr) {
         FYT_FATAL("serial_driver", "Failed to create protocol with type: {}", protocol_type);
         rclcpp::shutdown();

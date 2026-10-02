@@ -1,7 +1,7 @@
 /**:
   ros__parameters:
     debug: true
-    armor_solver.result_img.jpeg_quality: 50  # 结果图像的jpeg压缩质量，0-100，数值越大质量越好，文件也越大
+    armor_solver.result_img.jpeg_quality: 30  # 结果图像的jpeg压缩质量，0-100，数值越大质量越好，文件也越大
     target_frame: odom
     gimble_frame: gimbal_link
     max_armor_distance: 10.0

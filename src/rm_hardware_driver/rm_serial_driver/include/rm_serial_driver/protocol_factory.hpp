@@ -34,7 +34,8 @@ public:
   static std::unique_ptr<protocol::Protocol> createProtocol(std::string_view protocol_type,
                                                             std::string_view port_name,
                                                             int speed,
-                                                            bool enable_data_print) {
+                                                            bool enable_data_print,
+                                                            bool enable_gimbal_control = true) {
     if (protocol_type == "infantry") {
       return std::make_unique<protocol::ProtocolInfantry>(port_name, speed, enable_data_print);
     }
@@ -48,7 +49,8 @@ public:
       return std::make_unique<protocol::ProtocolSentry>(port_name, speed, enable_data_print);
     }
     if (protocol_type == "qyg_sentry") {
-      return std::make_unique<protocol::ProtocolQygSentry>(port_name, speed, enable_data_print);
+      return std::make_unique<protocol::ProtocolQygSentry>(
+        port_name, speed, enable_data_print, enable_gimbal_control);
     }
 
     return nullptr;

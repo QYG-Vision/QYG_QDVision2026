@@ -68,6 +68,16 @@ QygSendFrame makeSendFrame(
   return frame;
 }
 
+QygSendFrame makeGimbalCommandFrame(
+  bool enable_gimbal_control, bool fire_advice, float yaw, float pitch, float linear_x,
+  float linear_y, float angular_z, float distance, uint8_t target_id, float target_v_yaw)
+{
+  const bool control = enable_gimbal_control && distance >= 0.0F;
+  return makeSendFrame(
+    control, control && fire_advice, yaw, pitch, linear_x, linear_y, angular_z,
+    control ? distance : -1.0F, control ? target_id : 0U, control ? target_v_yaw : 0.0F);
+}
+
 std::optional<QygReceiveFrame> parseReceiveFrame(const uint8_t * data, size_t length)
 {
   if (data == nullptr || length < sizeof(QygReceiveFrame) || data[0] != 'G' || data[1] != 'D') {

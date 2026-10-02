@@ -126,6 +126,24 @@ QygSendFrame makeSendFrame(
   float distance, uint8_t target_id, float target_v_yaw);
 
 /**
+ * @brief 根据视觉云台指令与控制使能状态构造 QYG 下发帧。
+ * @param enable_gimbal_control 是否允许视觉控制云台。
+ * @param fire_advice 是否建议开火。
+ * @param yaw 云台 yaw，单位为弧度。
+ * @param pitch 云台 pitch，单位为弧度。
+ * @param linear_x 底盘 x 速度。
+ * @param linear_y 底盘 y 速度。
+ * @param angular_z 底盘角速度。
+ * @param distance 目标距离，单位为米。
+ * @param target_id 目标装甲板类型编号。
+ * @param target_v_yaw 目标自转角速度，单位为弧度每秒。
+ * @return 控制关闭或无有效目标时返回 mode=0 且无目标字段的 QYG 下发帧。
+ */
+QygSendFrame makeGimbalCommandFrame(
+  bool enable_gimbal_control, bool fire_advice, float yaw, float pitch, float linear_x,
+  float linear_y, float angular_z, float distance, uint8_t target_id, float target_v_yaw);
+
+/**
  * @brief 校验并解析一帧 QYG 回传数据。
  * @param data 串口数据缓冲区。
  * @param length 缓冲区长度。

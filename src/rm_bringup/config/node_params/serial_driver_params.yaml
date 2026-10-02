@@ -7,3 +7,4 @@
     baud_rate: 921600  # QYG 哨兵电控使用 921600
     protocol: "qyg_sentry"  # QYG 哨兵兼容协议；原 QD 协议仍可选 infantry/hero/air/sentry
     enable_data_print: true # 改为 true 将打印串口收发调试信息
+    enable_gimbal_control: false  # 仅 QYG 哨兵协议：false 时下发 mode=0，仅观测视觉解算结果

@@ -3,7 +3,7 @@ import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import Command
-from launch.actions import SetEnvironmentVariable
+from launch.actions import LogInfo, SetEnvironmentVariable
 from launch import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
@@ -220,6 +220,11 @@ def generate_launch_description():
             output='screen',
             parameters=[{'port': 8765}]
         ))
+    else:
+        actions.append(LogInfo(msg=(
+            'Foxglove bridge is disabled. To start it manually, run: '
+            'ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=8765'
+        )))
     if launch_params.get('enable_dynamic_camera_tf', True):
         # 动态 TF 调参节点（用于调试相机安装的 rpy 误差）
         # 使用 ros2 param set /dynamic_camera_tf pitch 0.02 来调整

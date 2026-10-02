@@ -1,7 +1,7 @@
 gimbal2camera:
-  xyz: "\"0.15468685215178846 -0.01575113922596922 0.041626554822924634\""
-  rpy: "\"0.0092488858053591007 0.16082436711618059 -0.020788808873300799\""
-
+  xyz: "\"0.12104076487154895 0.0059642778376232594 0.047148622523048356\""
+  rpy: "\"-0.051907938921026527 0.221349941611826 0.010912607024122823\""
+  
 #第二个头的gimbal2camera
   xyz_: "\"0 0 0\""
   rpy_: "\"0 0 0\""
@@ -32,4 +32,4 @@ enable_dynamic_camera_tf: false
 # true: 启动 gimbal2camera pitch 自动标定节点 false：不启动
 enable_pitch_calibration: false
 # true: 启动 Foxglove WebSocket 桥接，默认端口 8765
-foxglove_bridge: false
+foxglove_bridge: true

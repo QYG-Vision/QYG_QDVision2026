@@ -94,6 +94,17 @@ TEST(QygProtocol, noValidTargetSendsDisableModeAndNeutralFields)
   EXPECT_FLOAT_EQ(frame.target_v_yaw, 0.0F);
 }
 
+TEST(QygProtocol, disabledGimbalControlSendsDisableModeForValidTarget)
+{
+  const auto frame = qyg::makeGimbalCommandFrame(
+    false, true, 1.2F, -0.4F, 0.3F, -0.2F, 0.1F, 4.5F, 6U, 2.0F);
+
+  EXPECT_EQ(frame.mode, 0U);
+  EXPECT_FLOAT_EQ(frame.distance, -1.0F);
+  EXPECT_EQ(frame.target_id, 0U);
+  EXPECT_FLOAT_EQ(frame.target_v_yaw, 0.0F);
+}
+
 TEST(QygProtocol, qdDegreesConvertToQygRadians)
 {
   constexpr float PI = 3.14159265358979323846F;

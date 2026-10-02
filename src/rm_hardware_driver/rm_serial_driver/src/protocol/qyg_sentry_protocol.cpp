@@ -9,9 +9,11 @@
 namespace qd::serial_driver::protocol
 {
 
-ProtocolQygSentry::ProtocolQygSentry(std::string_view port_name, int speed, bool enable_data_print)
+ProtocolQygSentry::ProtocolQygSentry(
+  std::string_view port_name, int speed, bool enable_data_print, bool enable_gimbal_control)
 : transporter_(std::make_shared<UartTransporter>(std::string(port_name), speed)),
-  enable_data_print_(enable_data_print)
+  enable_data_print_(enable_data_print),
+  enable_gimbal_control_(enable_gimbal_control)
 {
   latest_gimbal_.distance = -1.0;
   if (!transporter_->open()) {
@@ -49,16 +51,13 @@ void ProtocolQygSentry::updateChassis(const rm_interfaces::msg::ChassisCmd & dat
 
 void ProtocolQygSentry::sendLatestLocked()
 {
-  const bool control = latest_gimbal_.distance >= 0.0;
-  const float distance = control ? static_cast<float>(latest_gimbal_.distance) : -1.0F;
-  const uint8_t target_id = control ? armor_id_to_uint8(latest_gimbal_.id) : 0U;
-  const float target_v_yaw = control ? static_cast<float>(latest_gimbal_.target_v_yaw) : 0.0F;
-  const auto frame = qyg::makeSendFrame(
-    control, control && latest_gimbal_.fire_advice,
+  const auto frame = qyg::makeGimbalCommandFrame(
+    enable_gimbal_control_, latest_gimbal_.fire_advice,
     qyg::degreesToRadians(static_cast<float>(latest_gimbal_.yaw)),
     qyg::degreesToRadians(static_cast<float>(latest_gimbal_.pitch)),
     static_cast<float>(latest_chassis_.linear.x), static_cast<float>(latest_chassis_.linear.y),
-    static_cast<float>(latest_chassis_.angular.z), distance, target_id, target_v_yaw);
+    static_cast<float>(latest_chassis_.angular.z), static_cast<float>(latest_gimbal_.distance),
+    armor_id_to_uint8(latest_gimbal_.id), static_cast<float>(latest_gimbal_.target_v_yaw));
 
   if (enable_data_print_) {
     const auto * bytes = reinterpret_cast<const uint8_t *>(&frame);
