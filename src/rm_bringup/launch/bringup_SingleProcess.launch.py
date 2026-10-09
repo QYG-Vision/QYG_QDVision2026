@@ -3,7 +3,8 @@ import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import Command
-from launch.actions import SetEnvironmentVariable
+from launch.actions import IncludeLaunchDescription, SetEnvironmentVariable
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
@@ -33,7 +34,12 @@ def generate_launch_description():
 
     # 定义获取参数文件的辅助函数
     def get_params(name):
-        return os.path.join(get_package_share_directory('rm_bringup'), 'config', 'node_params', '{}_params.yaml'.format(name))
+        path = os.path.join(get_package_share_directory('rm_bringup'), 'config', 'node_params', '{}_params.yaml'.format(name))
+        # 相机配置同时供状态机读取；以字典传入 ROS，展开为 camera_6mm.* 参数。
+        if name == 'camera_driver':
+            with open(path, encoding='utf-8') as config_file:
+                return yaml.safe_load(config_file)
+        return path
 
     # --- 准备 ComposableNode 列表 ---
     composable_nodes = []
@@ -203,8 +209,23 @@ def generate_launch_description():
 
     actions = [
         set_domain_id,
-        container
     ]
+    # 完整 MVS SDK 提供网口相机传输层；优先于仓库中仅含 USB 的 SDK 库。
+    sdk_path = '/opt/MVS/lib/64'
+    if os.path.isdir(sdk_path):
+        actions.append(SetEnvironmentVariable(
+            'LD_LIBRARY_PATH',
+            ':'.join([sdk_path, os.path.join(sdk_path, 'ThirdParty'),
+                      os.environ.get('LD_LIBRARY_PATH', '')])
+        ))
+    actions.append(container)
+    if launch_params.get('enable_foxglove_bridge', False):
+        actions.append(IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(
+                get_package_share_directory('rm_bringup'), 'launch',
+                'foxglove_bridge.launch.py')),
+            launch_arguments={'namespace': node_namespace}.items()
+        ))
     if launch_params.get('enable_dynamic_camera_tf', True):
         # 动态 TF 调参节点（用于调试相机安装的 rpy 误差）
         # 使用 ros2 param set /dynamic_camera_tf pitch 0.02 来调整

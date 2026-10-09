@@ -28,6 +28,11 @@ public:
 
   void send(const rm_interfaces::msg::GimbalCmd &data) override;
 
+  /**
+   * @brief 接收并解析 QD 电控的 16 字节小端反馈帧。
+   * @param data 输出角度（度）、弹速（米每秒）和电控时间戳（毫秒）；pitch 按消息约定取反。
+   * @return 是否收到完整有效帧。
+   */
   bool receive(rm_interfaces::msg::SerialReceiveData &data) override;
 
   std::vector<rclcpp::SubscriptionBase::SharedPtr> getSubscriptions(rclcpp::Node::SharedPtr node) override;

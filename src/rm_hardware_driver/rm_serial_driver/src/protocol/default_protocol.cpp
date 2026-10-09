@@ -78,13 +78,14 @@ bool DefaultProtocol::receive(rm_interfaces::msg::SerialReceiveData& data) {
     ReceivePacket pkt;
     std::memcpy(&pkt, raw_ptr, sizeof(ReceivePacket));
 
-    // 解包并处理大小端转换
+    // 电控反馈使用小端 int16（度×100）和 uint32（毫秒）。
+    // 当前支持的 amd64/arm64 均为小端；pitch 保留消息约定的符号，TF 发布时会取反。
     data.mode = pkt.mode;
-    data.roll = swap_bytes(pkt.roll) / 100.0f;
-    data.pitch = -swap_bytes(pkt.pitch) / 100.0f;
-    data.yaw = swap_bytes(pkt.yaw) / 100.0f;
-    data.bullet_speed = swap_bytes(pkt.bullet_speed) / 100.0f;
-    data.mcu_timestamp = swap_bytes(pkt.mcu_timestamp);
+    data.roll = pkt.roll / 100.0f;
+    data.pitch = -pkt.pitch / 100.0f;
+    data.yaw = pkt.yaw / 100.0f;
+    data.bullet_speed = pkt.bullet_speed / 100.0f;
+    data.mcu_timestamp = pkt.mcu_timestamp;
 
     return true;
 }

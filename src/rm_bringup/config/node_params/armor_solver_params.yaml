@@ -1,6 +1,8 @@
 /**:
   ros__parameters:
-    debug: false
+    debug: true  # 在结果图中绘制已跟踪装甲板的投影框
+    # 结果图是彩色图，仅发布原图与普通压缩图，停用深度图压缩插件。
+    armor_solver.result_img.enable_pub_plugins: ["image_transport/raw", "image_transport/compressed"]
     armor_solver.result_img.jpeg_quality: 50  # 结果图像的jpeg压缩质量，0-100，数值越大质量越好，文件也越大
     target_frame: odom
     gimble_frame: gimbal_link

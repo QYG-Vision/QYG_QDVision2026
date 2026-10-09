@@ -1,6 +1,6 @@
 gimbal2camera:
- xyz: "\"0.1178800943 -0.0012824677 0.0599528514\""
- rpy: "\"0.0082292241 0.0366700468 0.0068214048\""
+ xyz: "\"0.113477 0.000547 0.087106\""
+ rpy: "\"-0.017381 -0.077217 0.007199\""
 #第二个头的gimbal2camera
  xyz_: "\"0 0 0\""
  rpy_: "\"0 0 0\""
@@ -8,10 +8,12 @@ gimbal2camera:
 # 设置启动参数
 namespace: ""
 # true: 启动时自动打开装甲板检测效果窗口（需要桌面 DISPLAY 和 X11 授权）
-show_auto_aim_view: true
+show_auto_aim_view: false
 # 图像获取方式
 # true: 状态机线程模式(image_callback) false: 话题订阅模式(imageCallback)
-use_state_machine_camera: true
+use_state_machine_camera: false
+# true: 随自瞄启动 Foxglove Bridge，供远程查看节点、话题和 TF
+enable_foxglove_bridge: true
 # true: 英雄解算 false: 传统解算
 hero_solver: false
 # true: 开启打符 false：关闭打符,会设置 serial_driver 协议为 hero
