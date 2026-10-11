@@ -104,6 +104,10 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
         "armor_solver/cmd_gimbal",
         rclcpp::SensorDataQoS()
     );
+    ballistic_debug_pub_ = this->create_publisher<rm_interfaces::msg::BallisticDebug>(
+        "armor_solver/ballistic_debug",
+        rclcpp::SensorDataQoS()
+    );
     result_img_pub_ = image_transport::create_publisher(this, "armor_solver/result_img");
     result_image_publish_thread_ = std::thread(&ArmorSolverNode::resultImagePublishLoop, this);
 
@@ -213,6 +217,19 @@ void ArmorSolverNode::timerCallback() {
             );
 
             control_msg.header.stamp = solve_start_time;
+
+            if (const auto debug = solver_->get_ballistic_debug()) {
+                constexpr double RAD_TO_DEG = 180.0 / M_PI;
+                rm_interfaces::msg::BallisticDebug debug_msg;
+                debug_msg.header = control_msg.header;
+                debug_msg.geometric_pitch = debug->geometric_pitch_rad * RAD_TO_DEG;
+                debug_msg.compensated_pitch = debug->compensated_pitch_rad * RAD_TO_DEG;
+                debug_msg.delta_pitch =
+                    debug_msg.compensated_pitch - debug_msg.geometric_pitch;
+                debug_msg.ballistic_enabled = debug->ballistic_enabled;
+                debug_msg.ballistic_success = debug->ballistic_success;
+                ballistic_debug_pub_->publish(debug_msg);
+            }
 
         } catch (...) {
             FYT_ERROR("armor_solver", "Something went wrong in solver!");
@@ -983,28 +1000,22 @@ void ArmorSolverNode::setModeCallback(
 /**
  * @brief 串口节点回调，更新弹速
  * 
- * @param serial_data 
+ * @param serial_data 电控上报的数据，其中 bullet_speed 单位为米每秒。
  */
 void ArmorSolverNode::serialCallback(
     const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data
 ) {
-    double bullet_speed = serial_data->bullet_speed;
-    {
-        std::lock_guard<std::mutex> lock(solver_state_mutex_);
-        if (solver_ == nullptr) {
-            return;
-        }
-    }
-
-    if (bullet_speed <= 10.0) {
+    const double bullet_speed = serial_data->bullet_speed;
+    if (!BulletSpeedState::is_valid_sample(bullet_speed)) {
         return;
     }
 
-    auto result = this->set_parameter(rclcpp::Parameter("solver.bullet_speed", bullet_speed));
-
-    if (!result.successful) {
-        RCLCPP_WARN(this->get_logger(), "Failed to set bullet_speed parameter");
+    std::lock_guard<std::mutex> lock(solver_state_mutex_);
+    if (solver_ == nullptr) {
+        solver_ = std::make_unique<Solver>(weak_from_this());
     }
+
+    solver_->update_bullet_speed(bullet_speed);
 }
 
 } // namespace qd::auto_aim

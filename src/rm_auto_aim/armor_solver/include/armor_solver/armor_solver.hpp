@@ -19,6 +19,7 @@
 
 // std
 #include <memory>
+#include <optional>
 // ros2
 #include <angles/angles.h>
 #include <tf2_ros/buffer.h>
@@ -31,6 +32,7 @@
 #include <eigen3/Eigen/Core>
 #include <utility>
 // project
+#include "armor_solver/bullet_speed_state.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/logger/log.hpp"
@@ -44,6 +46,14 @@ constexpr int N_X = 9;
 using State = Eigen::Matrix<double, N_X, 1>; // 用于存放装甲板信息
 // state: xc, v_xc, yc, v_yc, za, v_za, orient, v_yaw, r,
 
+/** @brief 保存同一次弹道解算的角度，内部单位为 rad。 */
+struct BallisticDebugData {
+    double geometric_pitch_rad = 0.0;
+    double compensated_pitch_rad = 0.0;
+    bool ballistic_enabled = true;
+    bool ballistic_success = false;
+};
+
 struct ShootState {
     double yaw;
     double pitch;
@@ -54,6 +64,7 @@ struct ShootState {
     State state; // 目标装甲板，整车模型才有
     YpdCoord aim_ypd; // 电控要瞄准的位置
     YpdCoord aim_ypd_v; // 目标在云台下的球坐标变化率
+    std::optional<BallisticDebugData> ballistic_debug;
 };
 
 struct ShootParam {
@@ -62,6 +73,13 @@ struct ShootParam {
     Eigen::Vector3d aim_xyz =
         Eigen::Vector3d::Zero(); // z 改成 pitch_angle 算出的，其他同 target_xyz
     Eigen::Vector3d target_xyz = Eigen::Vector3d::Zero();
+    double geometric_pitch_rad = 0.;
+    bool ballistic_success = false;
+};
+
+struct AimResult {
+    YpdCoord aim_ypd;
+    std::optional<BallisticDebugData> ballistic_debug;
 };
 
 // ros消息转换类
@@ -126,6 +144,19 @@ public:
         std::shared_ptr<tf2_ros::Buffer> tf2_buffer_
     );
 
+    /**
+     * @brief 返回本帧用于生成云台命令的弹道角度。
+     * @return 有效瞄准结果的角度数据；无有效结果时为空。
+     */
+    std::optional<BallisticDebugData> get_ballistic_debug() const noexcept;
+
+    /**
+     * @brief 接收一条新的弹速样本并更新弹道模型。
+     * @param raw_bullet_speed 电控上报的弹速，单位米每秒。
+     * @note 调用方须与 solve() 共用 solver_state_mutex_ 保护求解器状态。
+     */
+    void update_bullet_speed(double raw_bullet_speed);
+
     // 可视化用的
     std::vector<std::pair<double, double>> getTrajectory() const noexcept;
 
@@ -146,7 +177,6 @@ private:
     double get_ballistic_flying_time(const Eigen::Vector3d& target_pos);
     State solve_impact_state(const State& state, double base_delay);
     double get_bullet_speed();
-    void update_bullet_speed(double raw_bullet_speed);
 
     std::vector<State> get_armors_state(const RosTarget& target_msg);
 
@@ -164,15 +194,15 @@ private:
 
     YpdCoord xyz_to_ypd(const Eigen::Vector3d& xyz);
     YpdCoord aim_xyz_to_aim_ypd(const Eigen::Vector3d& xyz);
-    YpdCoord target_pos_to_aim_ypd(const Eigen::Vector3d& xyz);
+    AimResult target_pos_to_aim_ypd(const Eigen::Vector3d& xyz);
 
     double aim_swing_cost(const YpdCoord& aim_ypd, const Eigen::Vector3d& gimbal_rpy);
 
-    std::pair<YpdCoord, State> choose_direct_aim(
+    std::pair<AimResult, State> choose_direct_aim(
         const std::vector<State>& direct_state_vec,
         const Eigen::Vector3d& gimbal_rpy
     );
-    std::pair<YpdCoord, State> choose_indirect_aim(
+    std::pair<AimResult, State> choose_indirect_aim(
         const std::vector<State>& indirect_state_vec,
         const Eigen::Vector3d& gimbal_rpy,
         double max_orientation_angle_,
@@ -229,10 +259,7 @@ private:
 
     double gravity = 9.8;
     double resistance = 0.001;
-    double bullet_speed = 23;
-    double bullet_speed_receive = 23;
-    double bullet_speed_filter_alpha_ = 0.2;
-    bool bullet_speed_filter_initialized_ = false;
+    BulletSpeedState bullet_speed_state_;
 
     double max_orientation_angle[3]; // 允许直接击打范围
     double max_out_error[3]; // 允许的误差
@@ -252,6 +279,8 @@ private:
     double last_aim_yaw_ = 0.0; // 记录上一帧锁定的装甲板世界 yaw，用于切板滞回
 
     bool use_armor_top_ = false;
+    bool use_ballistic_compensation_ = true;
+    std::optional<BallisticDebugData> ballistic_debug_;
 };
 
 } // namespace qd::auto_aim

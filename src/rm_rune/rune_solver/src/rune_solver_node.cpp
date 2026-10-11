@@ -19,6 +19,8 @@
 #include <rmw/qos_profiles.h>
 
 #include <rclcpp/qos.hpp>
+// std
+#include <cmath>
 // third party
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core/types.hpp>
@@ -44,7 +46,7 @@ RuneSolverNode::RuneSolverNode(const rclcpp::NodeOptions &options) : Node("rune_
   auto rune_solver_params = RuneSolver::RuneSolverParams{
     .compensator_type = declare_parameter("compensator_type", "ideal"),
     .gravity = declare_parameter("gravity", 9.8),
-    .bullet_speed = declare_parameter("bullet_speet", 28.0),
+    .bullet_speed = 0.0,
     .angle_offset_thres = declare_parameter("angle_offset_thres", 0.78),
     .lost_time_thres = declare_parameter("lost_time_thres", 0.5),
     .auto_type_determined = declare_parameter("auto_type_determined", true),
@@ -86,6 +88,9 @@ RuneSolverNode::RuneSolverNode(const rclcpp::NodeOptions &options) : Node("rune_
     "rune_detector/rune_target",
     rclcpp::SensorDataQoS(),
     std::bind(&RuneSolverNode::runeTargetCallback, this, std::placeholders::_1));
+  serial_receive_data_sub_ = this->create_subscription<rm_interfaces::msg::SerialReceiveData>(
+    "serial/receive", rclcpp::SensorDataQoS(),
+    std::bind(&RuneSolverNode::serialCallback, this, std::placeholders::_1));
 
   // Publisher
   gimbal_pub_ = this->create_publisher<rm_interfaces::msg::GimbalCmd>("rune_solver/cmd_gimbal",
@@ -193,7 +198,13 @@ void RuneSolverNode::timerCallback() {
 
   // Calculate predict time
   Eigen::Vector3d cur_pos = rune_solver_->getTargetPosition(0);
-  double flying_time = rune_solver_->trajectory_compensator->getFlyingTime(cur_pos);
+  double flying_time = 0.0;
+  if (rune_solver_->rune_solver_params.bullet_speed > 0.0) {
+    flying_time = rune_solver_->trajectory_compensator->getFlyingTime(cur_pos);
+    if (!std::isfinite(flying_time) || flying_time < 0.0) {
+      flying_time = 0.0;
+    }
+  }
   rclcpp::Time predict_timestamp = this->now() + rclcpp::Duration::from_seconds(predict_offset_) +
                                    rclcpp::Duration::from_seconds(flying_time);
 
@@ -304,7 +315,7 @@ void RuneSolverNode::timerCallback() {
 }
 
 void RuneSolverNode::runeTargetCallback(
-  const rm_interfaces::msg::RuneTarget::SharedPtr rune_target_msg) {
+  const rm_interfaces::msg::RuneTarget::ConstSharedPtr rune_target_msg) {
   // rune_solver_->pnp_solver is nullptr when camera_info is not received
   if (rune_solver_->pnp_solver == nullptr) {
     return;
@@ -342,8 +353,6 @@ rcl_interfaces::msg::SetParametersResult RuneSolverNode::onSetParameters(
       debug_ = param.as_bool();
     } else if (param.get_name() == "gravity") {
       rune_solver_->rune_solver_params.gravity = param.as_double();
-    } else if (param.get_name() == "bullet_speed") {
-      rune_solver_->rune_solver_params.bullet_speed = param.as_double();
     } else if (param.get_name() == "angle_offset_thres") {
       rune_solver_->rune_solver_params.angle_offset_thres = param.as_double();
     } else if (param.get_name() == "lost_time_thres") {
@@ -351,6 +360,17 @@ rcl_interfaces::msg::SetParametersResult RuneSolverNode::onSetParameters(
     }
   }
   return result;
+}
+
+void RuneSolverNode::serialCallback(
+  const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data) {
+  const double bullet_speed = serial_data->bullet_speed;
+  if (!std::isfinite(bullet_speed) || bullet_speed <= 0.0) {
+    return;
+  }
+
+  rune_solver_->rune_solver_params.bullet_speed = bullet_speed;
+  rune_solver_->trajectory_compensator->velocity = bullet_speed;
 }
 
 void RuneSolverNode::setModeCallback(

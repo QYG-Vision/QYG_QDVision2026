@@ -164,6 +164,7 @@ void SerialDriverNode::listenLoop() {
             t.header.frame_id = target_frame_;
             t.child_frame_id = child_frame_id_;
             auto roll = receive_data.roll * M_PI / 180.0;
+            // 电控 pitch 向上为正；TF 的 Y 轴旋转在这里取负。
             auto pitch = -receive_data.pitch * M_PI / 180.0;
             auto yaw = receive_data.yaw * M_PI / 180.0;
             tf2::Quaternion q;

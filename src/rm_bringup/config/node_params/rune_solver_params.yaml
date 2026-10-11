@@ -5,7 +5,6 @@
     predict_time: 0.0
     compensator_type: resistance
     gravity: 9.8
-    bullet_speet: 28.0
     lost_time_thres: 0.5
     ekf:
       q: [4.0e-4, 1.0e-4, 1.0e-4, 1.0e-4]

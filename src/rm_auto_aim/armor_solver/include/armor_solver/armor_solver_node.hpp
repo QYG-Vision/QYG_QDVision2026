@@ -49,6 +49,7 @@
 // #include "armor_solver/solveYawPnP.hpp"
 #include "armor_solver/armor_yaw_solver.hpp"
 #include "rm_interfaces/msg/armors.hpp"
+#include "rm_interfaces/msg/ballistic_debug.hpp"
 #include "rm_interfaces/msg/measurement.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/msg/target.hpp"
@@ -139,6 +140,7 @@ private:
     rclcpp::Publisher<rm_interfaces::msg::Armors>::SharedPtr armors_pub_;
     rclcpp::Publisher<rm_interfaces::msg::Target>::SharedPtr target_pub_;
     rclcpp::Publisher<rm_interfaces::msg::GimbalCmd>::SharedPtr gimbal_pub_;
+    rclcpp::Publisher<rm_interfaces::msg::BallisticDebug>::SharedPtr ballistic_debug_pub_;
     image_transport::Publisher result_img_pub_;
 
     // for pub img thread

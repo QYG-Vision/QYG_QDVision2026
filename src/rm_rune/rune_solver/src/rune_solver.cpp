@@ -48,7 +48,7 @@ RuneSolver::RuneSolver(const RuneSolverParams &rsp, std::shared_ptr<tf2_ros::Buf
   manual_compensator = std::make_unique<ManualCompensator>();
 }
 
-double RuneSolver::init(const rm_interfaces::msg::RuneTarget::SharedPtr received_target) {
+double RuneSolver::init(const rm_interfaces::msg::RuneTarget::ConstSharedPtr received_target) {
   if (received_target->is_lost) {
     return 0;
   }
@@ -87,7 +87,7 @@ double RuneSolver::init(const rm_interfaces::msg::RuneTarget::SharedPtr received
   return observed_angle;
 }
 
-double RuneSolver::update(const rm_interfaces::msg::RuneTarget::SharedPtr received_target) {
+double RuneSolver::update(const rm_interfaces::msg::RuneTarget::ConstSharedPtr received_target) {
   double now_time = rclcpp::Time(received_target->header.stamp).seconds();
   double delta_time = now_time - last_time_;
 
@@ -260,7 +260,9 @@ rm_interfaces::msg::GimbalCmd RuneSolver::solveGimbalCmd(const Eigen::Vector3d &
   trajectory_compensator->gravity = rune_solver_params.gravity;
   trajectory_compensator->iteration_times = 30;
 
-  if (double temp_pitch = pitch; trajectory_compensator->compensate(target, temp_pitch)) {
+  if (double temp_pitch = pitch;
+      rune_solver_params.bullet_speed > 0.0 &&
+      trajectory_compensator->compensate(target, temp_pitch)) {
     pitch = temp_pitch;
   }
   double distance = target.norm();
@@ -278,6 +280,7 @@ rm_interfaces::msg::GimbalCmd RuneSolver::solveGimbalCmd(const Eigen::Vector3d &
   gimbal_cmd.yaw_diff = (cmd_yaw - current_yaw) * 180 / M_PI;
   gimbal_cmd.pitch_diff = (cmd_pitch - current_pitch) * 180 / M_PI;
   gimbal_cmd.distance = distance;
+  gimbal_cmd.bullet_speed = rune_solver_params.bullet_speed;
 
   // Judge whether to shoot
   constexpr double TARGET_RADIUS = 0.308;
@@ -287,7 +290,8 @@ rm_interfaces::msg::GimbalCmd RuneSolver::solveGimbalCmd(const Eigen::Vector3d &
   // too large
   shooting_range_yaw = std::max(shooting_range_yaw, 1.0);
   shooting_range_pitch = std::max(shooting_range_pitch, 1.0);
-  if (std::abs(gimbal_cmd.yaw_diff) < shooting_range_yaw &&
+  if (rune_solver_params.bullet_speed > 0.0 &&
+      std::abs(gimbal_cmd.yaw_diff) < shooting_range_yaw &&
       std::abs(gimbal_cmd.pitch_diff) < shooting_range_pitch) {
     gimbal_cmd.fire_advice = true;
     FYT_DEBUG("rune_solver", "You Can Fire!");
@@ -298,7 +302,8 @@ rm_interfaces::msg::GimbalCmd RuneSolver::solveGimbalCmd(const Eigen::Vector3d &
   return gimbal_cmd;
 }
 
-double RuneSolver::getNormalAngle(const rm_interfaces::msg::RuneTarget::SharedPtr received_target) {
+double RuneSolver::getNormalAngle(
+  const rm_interfaces::msg::RuneTarget::ConstSharedPtr received_target) {
   auto center_point = cv::Point2f(received_target->pts[0].x, received_target->pts[0].y);
   std::array<cv::Point2f, ARMOR_KEYPOINTS_NUM> armor_points;
   std::transform(received_target->pts.begin() + 1,

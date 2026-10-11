@@ -84,7 +84,7 @@ bool ProtocolSentry::receive(rm_interfaces::msg::SerialReceiveData &data) {
     // 解包并处理大小端转换
     data.mode = pkt.mode;
     data.roll = swap_bytes(pkt.roll) / 100.0f;
-    data.pitch = -swap_bytes(pkt.pitch) / 100.0f;
+    data.pitch = swap_bytes(pkt.pitch) / 100.0f;
     data.yaw = swap_bytes(pkt.yaw) / 100.0f;
     data.bullet_speed = swap_bytes(pkt.bullet_speed) / 100.0f;
     data.mcu_timestamp = swap_bytes(pkt.mcu_timestamp);

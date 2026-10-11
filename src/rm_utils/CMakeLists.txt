@@ -158,6 +158,9 @@ if(BUILD_TESTING)
     ament_cmake_cpplint
   )
   ament_lint_auto_find_test_dependencies()
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_trajectory_compensator test/test_trajectory_compensator.cpp)
+  target_link_libraries(test_trajectory_compensator ${PROJECT_NAME} Eigen3::Eigen)
 endif()
 
 ament_package()

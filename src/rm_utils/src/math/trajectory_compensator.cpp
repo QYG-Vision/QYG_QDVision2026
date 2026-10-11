@@ -25,6 +25,7 @@ namespace qd {
 namespace {
 
 constexpr double kPitchLimit = M_PI / 2.5; // 最大仰角限制 72 deg
+constexpr double kHeightTolerance = 0.01; // 落点高度允许误差 1 cm
 
 class LinearResistanceResidual {
 public:
@@ -284,6 +285,12 @@ bool CeresCompensator::compensate(const Eigen::Vector3d &target_position, double
   ceres::Solve(options, &problem, &summary);
 
   if (!summary.IsSolutionUsable() || !std::isfinite(shoot_angle)) {
+    return false;
+  }
+
+  const double impact_height = calculateTrajectory(distance, shoot_angle);
+  if (!std::isfinite(impact_height) ||
+      std::abs(impact_height - target_position.z()) > kHeightTolerance) {
     return false;
   }
 

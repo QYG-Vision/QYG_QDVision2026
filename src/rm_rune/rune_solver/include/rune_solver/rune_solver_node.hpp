@@ -42,6 +42,7 @@
 #include "rm_interfaces/msg/debug_rune_angle.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/rune_target.hpp"
+#include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/srv/set_mode.hpp"
 #include "rm_utils/heartbeat.hpp"
 #include "rune_solver/rune_solver.hpp"
@@ -52,7 +53,10 @@ public:
   RuneSolverNode(const rclcpp::NodeOptions &options);
 
 private:
-  void runeTargetCallback(const rm_interfaces::msg::RuneTarget::SharedPtr rune_target_msg);
+  void runeTargetCallback(const rm_interfaces::msg::RuneTarget::ConstSharedPtr rune_target_msg);
+
+  /** @brief 使用电控上报的有效弹速更新打符弹道模型。 */
+  void serialCallback(const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data);
 
   void setModeCallback(const std::shared_ptr<rm_interfaces::srv::SetMode::Request> request,
                        std::shared_ptr<rm_interfaces::srv::SetMode::Response> response);
@@ -70,6 +74,7 @@ private:
 
   // Target Subscriber
   rclcpp::Subscription<rm_interfaces::msg::RuneTarget>::SharedPtr rune_target_sub_;
+  rclcpp::Subscription<rm_interfaces::msg::SerialReceiveData>::SharedPtr serial_receive_data_sub_;
   rm_interfaces::msg::RuneTarget last_rune_target_;
 
   // Predict Target publisher

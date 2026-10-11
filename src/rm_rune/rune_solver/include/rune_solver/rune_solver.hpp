@@ -75,10 +75,10 @@ public:
   RuneSolver(const RuneSolverParams &sr_params, std::shared_ptr<tf2_ros::Buffer> tf2_buffer);
 
   // Return: initial angle
-  double init(const rm_interfaces::msg::RuneTarget::SharedPtr received_target);
+  double init(const rm_interfaces::msg::RuneTarget::ConstSharedPtr received_target);
 
   // Return: normalized angle
-  double update(const rm_interfaces::msg::RuneTarget::SharedPtr receive_target);
+  double update(const rm_interfaces::msg::RuneTarget::ConstSharedPtr receive_target);
 
   // Return: normalized predicted angle
   double predictTarget(Eigen::Vector3d &predicted_position, double timestamp);
@@ -108,7 +108,7 @@ public:
   RuneSolverParams rune_solver_params;
 
 private:
-  double getNormalAngle(const rm_interfaces::msg::RuneTarget::SharedPtr received_target);
+  double getNormalAngle(const rm_interfaces::msg::RuneTarget::ConstSharedPtr received_target);
 
   double getObservedAngle(double normal_angle);
 

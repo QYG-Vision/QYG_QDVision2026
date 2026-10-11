@@ -32,11 +32,11 @@
 * `solver.controller_delay` (`double`, default: 0.0) - 控制延迟时间（s），不会影响选版
 * `solver.max_tracking_v_yaw` (`double`, default: 60.0) - 转速大于这个值时，瞄准中心
 * `solver.side_angle` (`double`, default: 15.0) - 跳转到下一装甲板的角度阈值,越大越容易切板
-* `solver.bullet_speed` (`double`, default: 25.0) - 子弹速度
-* `solver.bullet_speed_filter_alpha` (`double`, default: 0.2) - 弹速一阶低通滤波系数，越小越平滑
 * `solver.gravity` (`double`, default: 9.8) - 重力加速度
 * `solver.compensator_type` (`string`, default: "ideal") - 补偿器类型，可选 `ideal` / `resistance` / `ceres`
 * `solver.resistance` (`double`, default: 0.001) - 空气阻力
+
+弹速直接采用 `/serial/receive.bullet_speed`，视觉不再设置弹速参数或二次滤波。收到首个有效弹速前不会进行弹道补偿或建议开火。
 
 
 ## ArmorSolverNode

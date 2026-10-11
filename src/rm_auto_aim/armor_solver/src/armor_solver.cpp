@@ -29,23 +29,20 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     predict2send_delay_ = node->declare_parameter("solver.predict2send_delay", 0.0);
     controller_delay_ = node->declare_parameter("solver.controller_delay", 0.0);
     additional_prediction_time = node->declare_parameter("solver.additional_prediction_time", 0.0);
-    // 弹速
-    bullet_speed = node->declare_parameter("solver.bullet_speed", 20.0); // 重力
-    bullet_speed_filter_alpha_ =
-        std::clamp(node->declare_parameter("solver.bullet_speed_filter_alpha", 0.2), 0.0, 1.0);
-    bullet_speed_filter_initialized_ = bullet_speed > 0.0;
     gravity = node->declare_parameter("solver.gravity", 9.8);
     // 空气阻力
     resistance = node->declare_parameter("solver.resistance", 0.001);
 
     use_armor_top_ = node->declare_parameter("solver.use_armor_top", false);
+    use_ballistic_compensation_ =
+        node->declare_parameter("solver.use_ballistic_compensation", true);
 
     // 补偿器
     std::string compenstator_type = node->declare_parameter("solver.compensator_type", "ideal");
     trajectory_compensator_ = CompensatorFactory::createCompensator(compenstator_type);
     trajectory_compensator_->iteration_times =
         node->declare_parameter("solver.iteration_times", 20);
-    trajectory_compensator_->velocity = bullet_speed;
+    trajectory_compensator_->velocity = get_bullet_speed();
     trajectory_compensator_->gravity = gravity;
     trajectory_compensator_->resistance = resistance;
     trajectory_compensator_->rk4_time_step =
@@ -100,6 +97,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     const rclcpp::Time& current_time,
     std::shared_ptr<tf2_ros::Buffer> tf2_buffer_
 ) {
+    ballistic_debug_.reset();
     // Get newest parameters
     // 更新参数
     try {
@@ -108,17 +106,11 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         controller_delay_ = node->get_parameter("solver.controller_delay").as_double();
         additional_prediction_time =
             node->get_parameter("solver.additional_prediction_time").as_double();
-        const double raw_bullet_speed = node->get_parameter("solver.bullet_speed").as_double();
-        bullet_speed_filter_alpha_ = std::clamp(
-            node->get_parameter("solver.bullet_speed_filter_alpha").as_double(),
-            0.0,
-            1.0
-        );
         use_armor_top_ = node->get_parameter("solver.use_armor_top").as_bool();
+        use_ballistic_compensation_ =
+            node->get_parameter("solver.use_ballistic_compensation").as_bool();
         gimble_frame_ = node->get_parameter("gimble_frame").as_string();
         node.reset();
-
-        update_bullet_speed(raw_bullet_speed);
 
         prediction_delay_ = (current_time - target.header.stamp).seconds();
     } catch (const std::runtime_error& e) {
@@ -161,6 +153,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     } else {
         target_aim = get_aim(target_msg, gimbal_rpy_);
     }
+    ballistic_debug_ = target_aim.ballistic_debug;
 
     // Initialize gimbal_cmd
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
@@ -175,7 +168,8 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
     gimbal_cmd.pitch_diff = reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
     gimbal_cmd.distance = send_ypd.distance;
-    gimbal_cmd.fire_advice = target_aim.shoot == ShootMode::SHOOT_NOW ? true : false;
+    gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
+                             && target_aim.shoot == ShootMode::SHOOT_NOW;
     // 以下信息主要用于调试和可视化
     gimbal_cmd.bullet_speed = get_bullet_speed();
     gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
@@ -187,12 +181,19 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     return gimbal_cmd;
 }
 
+std::optional<BallisticDebugData> Solver::get_ballistic_debug() const noexcept {
+    return ballistic_debug_;
+}
+
 /**
  * @brief 根据 pitch 模拟弹道轨迹
  * 
  * @return std::vector<std::pair<double, double>> 
  */
 std::vector<std::pair<double, double>> Solver::getTrajectory() const noexcept {
+    if (bullet_speed_state_.value() <= 0.0) {
+        return {};
+    }
     auto trajectory = trajectory_compensator_->getTrajectory(15, gimbal_rpy_[1]);
     // Rotate
     for (auto& p: trajectory) {
@@ -241,12 +242,15 @@ int Solver::get_top_level() const {
   @return 飞行所需时间，单位秒
 */
 double Solver::get_ballistic_flying_time(const Eigen::Vector3d& target_pos) {
-    const double safe_bullet_speed = std::max(get_bullet_speed(), 1e-3);
+    const double bullet_speed = get_bullet_speed();
+    if (bullet_speed <= 0.0) {
+        return 0.0;
+    }
     const double distance_xy = target_pos.head(2).norm();
 
     double pitch = 0.0;
     if (!trajectory_compensator_ || !trajectory_compensator_->compensate(target_pos, pitch)) {
-        return target_pos.norm() / safe_bullet_speed;
+        return target_pos.norm() / bullet_speed;
     }
 
     Eigen::Vector3d aim_pos = target_pos;
@@ -254,7 +258,7 @@ double Solver::get_ballistic_flying_time(const Eigen::Vector3d& target_pos) {
     const double flying_time = trajectory_compensator_->getFlyingTime(aim_pos);
 
     if (!std::isfinite(flying_time) || flying_time < 0.0) {
-        return target_pos.norm() / safe_bullet_speed;
+        return target_pos.norm() / bullet_speed;
     }
 
     return flying_time;
@@ -390,7 +394,8 @@ ShootState Solver::get_aim_positon(const RosTarget& target_msg, const Eigen::Vec
 
     //弹道解算和火控
     const Eigen::Vector3d target_pos { pre_state(0), pre_state(2), pre_state(4) };
-    const auto aim_ypd = target_pos_to_aim_ypd(target_pos);
+    const auto aim_result = target_pos_to_aim_ypd(target_pos);
+    const auto& aim_ypd = aim_result.aim_ypd;
 
     auto isFire = isSuggestFire(
         aim_ypd,
@@ -404,6 +409,7 @@ ShootState Solver::get_aim_positon(const RosTarget& target_msg, const Eigen::Vec
     auto target_aim = YpdCoord_to_ShootState(aim_ypd, isFire);
     target_aim.aim_ypd = aim_ypd;
     target_aim.aim_ypd_v = get_gimbal_ypd_v(p, p_v, gimbal_rpy);
+    target_aim.ballistic_debug = aim_result.ballistic_debug;
 
     return target_aim;
 }
@@ -415,38 +421,38 @@ ShootParam Solver::target_pos_to_shoot_param(const Eigen::Vector3d& target_pos) 
     Eigen::Vector3d target_xyz_i_barrel = target_pos;
     const double bs = this->get_bullet_speed();
     const double target_xy = std::hypot(target_xyz_i_barrel.x(), target_xyz_i_barrel.y());
-    double shoot_angle = std::atan2(target_xyz_i_barrel.z(), target_xy);
+    const double geometric_pitch = std::atan2(target_xyz_i_barrel.z(), target_xy);
+    double shoot_angle = geometric_pitch;
     Eigen::Vector3d aim_xyz_i_barrel = target_xyz_i_barrel;
 
     double compensated_pitch = shoot_angle;
-    if (trajectory_compensator_->compensate(target_xyz_i_barrel, compensated_pitch)
-        && std::isfinite(compensated_pitch))
+    // 仅切换发射角；命中时刻的飞行时间预测仍使用原有弹道模型。
+    const bool ballistic_success =
+        use_ballistic_compensation_
+        && bs > 0.0
+        && trajectory_compensator_->compensate(target_xyz_i_barrel, compensated_pitch)
+        && std::isfinite(compensated_pitch);
+    if (ballistic_success)
     {
         shoot_angle = compensated_pitch;
         aim_xyz_i_barrel.z() = target_xy * std::tan(shoot_angle);
     }
 
-    return ShootParam { bs, shoot_angle, aim_xyz_i_barrel, target_pos };
+    return ShootParam {
+        bs, shoot_angle, aim_xyz_i_barrel, target_pos, geometric_pitch, ballistic_success
+    };
 }
 
-/**
-  @brief 更新滤波后的弹速
-*/
+/** @brief 使用电控最新弹速更新弹道模型。 */
 void Solver::update_bullet_speed(double raw_bullet_speed) {
-    if (raw_bullet_speed <= 0.0) {
+    if (!BulletSpeedState::is_valid_sample(raw_bullet_speed)) {
         return;
     }
 
-    if (!bullet_speed_filter_initialized_) {
-        bullet_speed = raw_bullet_speed;
-        bullet_speed_filter_initialized_ = true;
-    } else if (bullet_speed_receive != raw_bullet_speed) {
-        bullet_speed += bullet_speed_filter_alpha_ * (raw_bullet_speed - bullet_speed);
-        bullet_speed_receive = raw_bullet_speed;
-    }
+    bullet_speed_state_.update(raw_bullet_speed);
 
     if (trajectory_compensator_) {
-        trajectory_compensator_->velocity = bullet_speed;
+        trajectory_compensator_->velocity = get_bullet_speed();
     }
 }
 
@@ -454,7 +460,7 @@ void Solver::update_bullet_speed(double raw_bullet_speed) {
   @brief 获得子弹速度
 */
 double Solver::get_bullet_speed() {
-    return bullet_speed;
+    return bullet_speed_state_.value();
 }
 
 /**
@@ -545,40 +551,50 @@ double Solver::aim_swing_cost(const YpdCoord& aim_ypd, const Eigen::Vector3d& gi
 /**
   @brief 得到最小代价击打的装甲板的ypd，最终击打位置
 */
-std::pair<YpdCoord, State> Solver::choose_direct_aim(
+std::pair<AimResult, State> Solver::choose_direct_aim(
     const std::vector<State>& direct_state_vec,
     const Eigen::Vector3d& gimbal_rpy
 ) {
     // 获得最小摆动代价的装甲板
     State chosen_state = direct_state_vec[0];
-    YpdCoord chosen_aim_ypd;
+    AimResult chosen_aim_result;
     double min_swing_cost = DBL_MAX;
     for (const auto& direct: direct_state_vec) {
         const Eigen::Vector3d target_pos = state_to_armor_pos(direct);
-        const auto aim_ypd = target_pos_to_aim_ypd(target_pos);
-        const double swing_cost = aim_swing_cost(aim_ypd, gimbal_rpy);
+        const auto aim_result = target_pos_to_aim_ypd(target_pos);
+        const double swing_cost = aim_swing_cost(aim_result.aim_ypd, gimbal_rpy);
         if (swing_cost < min_swing_cost) {
             chosen_state = direct;
             min_swing_cost = swing_cost;
-            chosen_aim_ypd = aim_ypd;
+            chosen_aim_result = aim_result;
         }
     }
 
-    return { chosen_aim_ypd, chosen_state };
+    return { chosen_aim_result, chosen_state };
 }
 
 /**
-  @brief 得到经过弹道解算后的ypd,有手动补偿角度
-*/
-YpdCoord Solver::target_pos_to_aim_ypd(const Eigen::Vector3d& xyz) {
-    Eigen::Vector3d aim_xyz = this->target_pos_to_shoot_param(xyz).aim_xyz;
-    return this->aim_xyz_to_aim_ypd(aim_xyz);
+ * @brief 计算目标瞄准角及同一次解算的弹道角度。
+ * @param xyz 目标在 odom 坐标系中的位置，单位 m。
+ * @return 带手动角度补偿的瞄准角，以及手动补偿前的弹道角度。
+ */
+AimResult Solver::target_pos_to_aim_ypd(const Eigen::Vector3d& xyz) {
+    const ShootParam shoot_param = this->target_pos_to_shoot_param(xyz);
+    return {
+        this->aim_xyz_to_aim_ypd(shoot_param.aim_xyz),
+        BallisticDebugData {
+            shoot_param.geometric_pitch_rad,
+            shoot_param.pitch_angle,
+            use_ballistic_compensation_,
+            shoot_param.ballistic_success
+        }
+    };
 }
 
 /**
   @brief 角速度较大时调用，到指定位置等待
 */
-std::pair<YpdCoord, State> Solver::choose_indirect_aim(
+std::pair<AimResult, State> Solver::choose_indirect_aim(
     const std::vector<State>& indirect_state_vec,
     const Eigen::Vector3d& gimbal_rpy,
     double max_orientation_angle_,
@@ -622,9 +638,9 @@ std::pair<YpdCoord, State> Solver::choose_indirect_aim(
     const double time_to_emerge = actual_min_wait / std::abs(w);
     auto aim_state = state_predict(indirect_aim_state, time_to_emerge);
     const Eigen::Vector3d target_pos = state_to_armor_pos(aim_state);
-    const auto aim_ypd = target_pos_to_aim_ypd(target_pos);
+    const auto aim_result = target_pos_to_aim_ypd(target_pos);
 
-    return { aim_ypd, indirect_aim_state };
+    return { aim_result, indirect_aim_state };
 }
 
 /**
@@ -655,7 +671,7 @@ ShootState Solver::state_vec_to_aim(
 ) {
     const std::vector<State> direct_vec =
         state_vec_to_direct_state_vec(state_vec, max_orientation_angle, gimbal_rpy);
-    std::pair<YpdCoord, State> target_ypd_and_state;
+    std::pair<AimResult, State> target_aim_result_and_state;
     if (direct_vec.empty()) {
         if (!allow_indirect) {
             //debug
@@ -663,19 +679,20 @@ ShootState Solver::state_vec_to_aim(
             return ShootState { 0.0, 0.0, -1.0, ShootMode::IDLE, State {} };
         }
 
-        target_ypd_and_state =
+        target_aim_result_and_state =
             choose_indirect_aim(state_vec, gimbal_rpy, max_orientation_angle, max_out_error);
     } else {
-        target_ypd_and_state = choose_direct_aim(direct_vec, gimbal_rpy);
+        target_aim_result_and_state = choose_direct_aim(direct_vec, gimbal_rpy);
     }
 
     // 赋值
     auto target_aim = ShootState {};
     target_aim.shoot = ShootMode::TRACKING;
-    target_aim.state = target_ypd_and_state.second;
-    target_aim.aim_ypd = target_ypd_and_state.first;
-    auto target_pos = state_to_armor_pos(target_ypd_and_state.second);
-    auto armor_v = state_to_armor_v(target_ypd_and_state.second);
+    target_aim.state = target_aim_result_and_state.second;
+    target_aim.aim_ypd = target_aim_result_and_state.first.aim_ypd;
+    target_aim.ballistic_debug = target_aim_result_and_state.first.ballistic_debug;
+    auto target_pos = state_to_armor_pos(target_aim_result_and_state.second);
+    auto armor_v = state_to_armor_v(target_aim_result_and_state.second);
     target_aim.aim_ypd_v = get_gimbal_ypd_v(target_pos, armor_v, gimbal_rpy); // 计算ypd_v
     // 记录本帧最终锁定的装甲板世界 yaw，供下一帧切板滞回使用
     last_aim_yaw_ = target_aim.state(6);

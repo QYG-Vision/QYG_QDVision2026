@@ -48,7 +48,9 @@ if(BUILD_TESTING)
   )
   ament_lint_auto_find_test_dependencies()
 
-  find_package(ament_cmake_gtest)
+  find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_bullet_speed_state test/test_bullet_speed_state.cpp)
+  target_include_directories(test_bullet_speed_state PRIVATE include)
 
 endif()
 

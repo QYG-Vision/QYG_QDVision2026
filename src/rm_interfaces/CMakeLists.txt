@@ -19,6 +19,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/RuneTarget.msg"
   "msg/Point2d.msg"
   "msg/GimbalCmd.msg"
+  "msg/BallisticDebug.msg"
   "msg/ChassisCmd.msg"
   "msg/DebugLight.msg"
   "msg/DebugLights.msg"
