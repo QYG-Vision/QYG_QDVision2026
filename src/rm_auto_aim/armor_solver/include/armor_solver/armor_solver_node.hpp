@@ -71,6 +71,14 @@ private:
     };
 
     void armorFrameWorkerLoop();
+    /**
+     * @brief 处理本帧 PnP 观测，并按配置更新 EKF 或发布未滤波观测。
+     * @param armors_ptr 输入相机坐标系位姿，输出 target_frame 坐标系位姿。
+     * @param camera_info 本帧相机内参，供装甲板 yaw 解算使用。
+     * @param reprojected_armors 输出绘图数据，关闭 EKF 时使用原始检测角点。
+     * @return 坐标变换和本帧处理成功时返回 true。
+     * @note enable_ekf 在启动时读取；关闭时不生成跟踪预测或云台指令。
+     */
     bool processArmors(
         const rm_interfaces::msg::Armors::SharedPtr& armors_ptr,
         const sensor_msgs::msg::CameraInfo& camera_info,
@@ -102,6 +110,8 @@ private:
     );
 
     bool debug_mode_;
+    // 启动时读取；关闭后仅发布未滤波的装甲板位姿和结果图。
+    bool enable_ekf_;
 
     // Heartbeat
     HeartBeatPublisher::SharedPtr heartbeat_;

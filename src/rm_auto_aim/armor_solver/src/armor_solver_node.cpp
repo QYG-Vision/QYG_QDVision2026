@@ -63,6 +63,7 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
     FYT_INFO("armor_solver", "Starting ArmorSolverNode!");
 
     debug_mode_ = this->declare_parameter("debug", true);
+    enable_ekf_ = this->declare_parameter("enable_ekf", true);
 
     // Tracker 初始化参数
     double max_match_distance = this->declare_parameter("tracker.max_match_distance", 0.2);
@@ -139,7 +140,11 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
     heartbeat_ = HeartBeatPublisher::create(this);
 
     //平移运动模型ekf
-    init_ArmorStateEKF();
+    if (enable_ekf_) {
+        init_ArmorStateEKF();
+    } else {
+        FYT_INFO("armor_solver", "EKF disabled: publishing PnP poses and images only");
+    }
 
     enable_YawPnP = this->declare_parameter("enable_solveYawPnp", false);
     max_armor_distance_ = this->declare_parameter("max_armor_distance", 10.0);
@@ -170,12 +175,15 @@ ArmorSolverNode::~ArmorSolverNode() {
  */
 void ArmorSolverNode::timerCallback() {
     enable_ = state_machine_.shouldDetect();
-    if (!enable_) {
+    if (!enable_ || !enable_ekf_) {
         return;
     }
 
     // Init message
     rm_interfaces::msg::GimbalCmd control_msg;
+    // 无目标指令也使用当前 ROS 时间，保证图表与串口调试消息具有有效时间戳。
+    control_msg.header.stamp = this->now();
+    control_msg.header.frame_id = target_frame_;
     control_msg.yaw_diff = 0;
     control_msg.pitch_diff = 0;
     control_msg.distance = -1;
@@ -518,6 +526,10 @@ void ArmorSolverNode::drawArmors(
         }
     }
 
+    // 未滤波的检测框彼此独立，不绘制整车模型的连接线。
+    if (!enable_ekf_) {
+        return;
+    }
     const size_t num = all_armor_pts.size();
     for (size_t i = 0; i < num; ++i) {
         const auto& curr_pts = all_armor_pts[i];
@@ -570,11 +582,6 @@ void ArmorSolverNode::publishResultImage(ResultImageTask result_image_task) {
     result_img_pub_.publish(result_msg);
 }
 
-/**
- * @brief 识别节点消息处理逻辑
- * 
- * @param armors_msg 
- */
 bool ArmorSolverNode::processArmors(
     const rm_interfaces::msg::Armors::SharedPtr& armors_msg,
     const sensor_msgs::msg::CameraInfo& camera_info,
@@ -583,7 +590,7 @@ bool ArmorSolverNode::processArmors(
     std::lock_guard<std::mutex> lock(solver_state_mutex_);
 
     // Lazy initialize solver owing to weak_from_this() can't be called in constructor
-    if (solver_ == nullptr) {
+    if (enable_ekf_ && solver_ == nullptr) {
         solver_ = std::make_unique<Solver>(weak_from_this());
     }
 
@@ -641,6 +648,56 @@ bool ArmorSolverNode::processArmors(
     rclcpp::Time time = armors_msg->header.stamp;
     target_msg.header.stamp = time;
     target_msg.header.frame_id = target_frame_;
+
+    if (!enable_ekf_) {
+        // 按本帧观测独立解算 yaw，不读取 EKF 的预测状态。
+        if (solveYawPnP_) {
+            std::vector<std::string> solved_ids;
+            for (const auto& armor: armors_msg->armors) {
+                if (std::find(solved_ids.begin(), solved_ids.end(), armor.number)
+                    != solved_ids.end())
+                {
+                    continue;
+                }
+                solved_ids.push_back(armor.number);
+                solveYawPnP_->solve(
+                    armors_msg, source_header, M_PI / 4., armor.number, tf2_buffer_
+                );
+            }
+        }
+
+        // 观测量取离画面中心最近的装甲板；位置与朝向均来自本帧 PnP。
+        if (!armors_msg->armors.empty()) {
+            const auto nearest = std::min_element(
+                armors_msg->armors.begin(),
+                armors_msg->armors.end(),
+                [](const auto& lhs, const auto& rhs) {
+                    return lhs.distance_to_image_center < rhs.distance_to_image_center;
+                }
+            );
+            const auto& position = nearest->pose.position;
+            measure_msg.x = position.x;
+            measure_msg.y = position.y;
+            measure_msg.z = position.z;
+            const double horizontal_distance = std::hypot(position.x, position.y);
+            measure_msg.center_yaw = std::atan2(position.y, position.x);
+            measure_msg.pitch = std::atan2(position.z, horizontal_distance);
+            measure_msg.distance = std::hypot(horizontal_distance, position.z);
+            tf2::Quaternion orientation;
+            tf2::fromMsg(nearest->pose.orientation, orientation);
+            tf2::Matrix3x3(orientation).getRPY(
+                measure_msg.armor_roll, measure_msg.armor_pitch, measure_msg.yaw
+            );
+            measure_pub_->publish(measure_msg);
+        }
+
+        target_msg.tracking = false;
+        armor_target_ = target_msg;
+        target_pub_->publish(target_msg);
+        reprojected_armors = armors_msg->armors;
+        heartbeat_->publish();
+        return true;
+    }
 
     // Update tracker
     if (tracker_->tracker_state == TrackerState::LOST) {
