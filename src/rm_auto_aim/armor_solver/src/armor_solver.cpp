@@ -216,11 +216,12 @@ void Solver::update_top_level(const double angular_velocity) {
     const double next_level_activate_w =
         this->top_level == 2 ? DBL_MAX : activate_threshold[this->top_level + 1];
     const double deactivate_w =
-        this->top_level == 0 ? DBL_MIN : deactivate_threshold[this->top_level];
+        this->top_level == 0 ? 0.0 : deactivate_threshold[this->top_level];
 
-    if (credible_abs_w >= next_level_activate_w) {
+    // 自转速度为零时保持 top0，等级越界会导致后续参数数组访问越界。
+    if (this->top_level < 2 && credible_abs_w >= next_level_activate_w) {
         this->top_level += 1;
-    } else if (credible_abs_w < deactivate_w) {
+    } else if (this->top_level > 0 && credible_abs_w < deactivate_w) {
         this->top_level -= 1;
     }
 }
@@ -400,6 +401,8 @@ ShootState Solver::get_aim_positon(const RosTarget& target_msg, const Eigen::Vec
     );
 
     auto target_aim = YpdCoord_to_ShootState(aim_ypd, isFire);
+    // 普通跟随的状态也须明确赋值，避免串口读取未初始化的目标自转速度。
+    target_aim.state = pre_state;
     target_aim.aim_ypd = aim_ypd;
     target_aim.aim_ypd_v = get_gimbal_ypd_v(p, p_v, gimbal_rpy);
 

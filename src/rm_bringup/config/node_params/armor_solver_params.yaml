@@ -18,7 +18,7 @@
 
       armor_model:
         q_x: 0.01
-        q_v: 100.0
+        q_v: 1.0  # 降低静止装甲板观测抖动引出的虚假横向速度；实测回放验证
 
         r_yaw: 1.0
         r_pitch: 1.5
@@ -32,7 +32,7 @@
       lost_time_thres: 0.3
           
     solver:
-      use_armor_top: false            # 是否使用平移运动模型(armor_model),仅在 top0 时使用
+      use_armor_top: true             # 普通跟随使用装甲板位置 EKF；陀螺仍使用整车模型
       predict2send_delay: 0.0         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
       additional_prediction_time: 0.0 # 根据角速度，给电控指令的额外预测时间
