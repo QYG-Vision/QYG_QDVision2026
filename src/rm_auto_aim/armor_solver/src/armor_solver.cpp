@@ -30,10 +30,11 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     controller_delay_ = node->declare_parameter("solver.controller_delay", 0.0);
     additional_prediction_time = node->declare_parameter("solver.additional_prediction_time", 0.0);
     // 弹速
-    bullet_speed = node->declare_parameter("solver.bullet_speed", 20.0); // 重力
+    bullet_speed = node->declare_parameter("solver.bullet_speed", 16.0);
     bullet_speed_filter_alpha_ =
         std::clamp(node->declare_parameter("solver.bullet_speed_filter_alpha", 0.2), 0.0, 1.0);
-    bullet_speed_filter_initialized_ = bullet_speed > 0.0;
+    // 配置弹速仅用于兜底，首次有效反馈直接初始化滤波状态。
+    bullet_speed_filter_initialized_ = false;
     gravity = node->declare_parameter("solver.gravity", 9.8);
     // 空气阻力
     resistance = node->declare_parameter("solver.resistance", 0.001);
@@ -108,7 +109,6 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         controller_delay_ = node->get_parameter("solver.controller_delay").as_double();
         additional_prediction_time =
             node->get_parameter("solver.additional_prediction_time").as_double();
-        const double raw_bullet_speed = node->get_parameter("solver.bullet_speed").as_double();
         bullet_speed_filter_alpha_ = std::clamp(
             node->get_parameter("solver.bullet_speed_filter_alpha").as_double(),
             0.0,
@@ -117,8 +117,6 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         use_armor_top_ = node->get_parameter("solver.use_armor_top").as_bool();
         gimble_frame_ = node->get_parameter("gimble_frame").as_string();
         node.reset();
-
-        update_bullet_speed(raw_bullet_speed);
 
         prediction_delay_ = (current_time - target.header.stamp).seconds();
     } catch (const std::runtime_error& e) {
@@ -429,20 +427,16 @@ ShootParam Solver::target_pos_to_shoot_param(const Eigen::Vector3d& target_pos) 
     return ShootParam { bs, shoot_angle, aim_xyz_i_barrel, target_pos };
 }
 
-/**
-  @brief 更新滤波后的弹速
-*/
 void Solver::update_bullet_speed(double raw_bullet_speed) {
-    if (raw_bullet_speed <= 0.0) {
+    if (!std::isfinite(raw_bullet_speed) || raw_bullet_speed <= 0.0) {
         return;
     }
 
     if (!bullet_speed_filter_initialized_) {
         bullet_speed = raw_bullet_speed;
         bullet_speed_filter_initialized_ = true;
-    } else if (bullet_speed_receive != raw_bullet_speed) {
+    } else {
         bullet_speed += bullet_speed_filter_alpha_ * (raw_bullet_speed - bullet_speed);
-        bullet_speed_receive = raw_bullet_speed;
     }
 
     if (trajectory_compensator_) {

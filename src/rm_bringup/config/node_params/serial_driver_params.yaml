@@ -2,7 +2,7 @@
   ros__parameters:
     target_frame: odom
     child_frame_id: gimbal_link
-    timestamp_offset: 0.000
+    timestamp_offset: -0.036  # 姿态时间戳提前 36 ms，手动转动测试拟合值，待验证
     port_name: "/dev/ttyUSB0"
     baud_rate: 921600  # 与标定时使用的电控串口配置一致
     protocol: "hero"  # ProtocolInfantry: infantry , DefaultProtocol: hero air , ProtocolSentry: sentry

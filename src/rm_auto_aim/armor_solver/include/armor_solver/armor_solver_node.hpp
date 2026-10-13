@@ -84,6 +84,11 @@ private:
         const sensor_msgs::msg::CameraInfo& camera_info,
         std::vector<rm_interfaces::msg::Armor>& reprojected_armors
     );
+    /**
+     * @brief 根据新的有效串口反馈更新解算弹速并记录原始弹速参数。
+     * @param serial_data 电控反馈；弹速单位米每秒，仅接受有限且大于 10 的值。
+     * @note 持有解算状态互斥锁时更新滤波，参数写入在锁外进行。
+     */
     void serialCallback(const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data);
     void publishArmors(rm_interfaces::msg::Armors&& armors_msg);
     std::vector<rm_interfaces::msg::Armor> getReprojectedArmors();

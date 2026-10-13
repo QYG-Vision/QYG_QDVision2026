@@ -134,6 +134,13 @@ public:
 
     int get_top_level() const;
 
+    /**
+     * @brief 使用新收到的有效弹速更新滤波状态和弹道模型。
+     * @param raw_bullet_speed 原始反馈弹速，单位米每秒，须为有限正数。
+     * @note 每条新反馈调用一次；调用方须与解算线程互斥访问。
+     */
+    void update_bullet_speed(double raw_bullet_speed);
+
 private:
     std::unique_ptr<TrajectoryCompensator> trajectory_compensator_;
     std::unique_ptr<ManualCompensator> manual_compensator_;
@@ -146,7 +153,6 @@ private:
     double get_ballistic_flying_time(const Eigen::Vector3d& target_pos);
     State solve_impact_state(const State& state, double base_delay);
     double get_bullet_speed();
-    void update_bullet_speed(double raw_bullet_speed);
 
     std::vector<State> get_armors_state(const RosTarget& target_msg);
 
@@ -229,8 +235,7 @@ private:
 
     double gravity = 9.8;
     double resistance = 0.001;
-    double bullet_speed = 23;
-    double bullet_speed_receive = 23;
+    double bullet_speed = 16.0;
     double bullet_speed_filter_alpha_ = 0.2;
     bool bullet_speed_filter_initialized_ = false;
 

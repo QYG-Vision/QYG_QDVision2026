@@ -38,7 +38,7 @@
       additional_prediction_time: 0.0 # 根据角速度，给电控指令的额外预测时间
       shooting_range_width: 0.135     # 开火宽度范围
       shooting_range_height: 0.135    # 开火高度范围
-      bullet_speed: 23.0   #弹速
+      bullet_speed: 16.0   # 未收到有效电控反馈时的兜底弹速，单位 m/s
       bullet_speed_filter_alpha: 0.3  # 弹速一阶低通滤波系数，越小越稳
       compensator_type: "ceres" # ideal(仅重力) resistance(阻力近似) ceres(ceres线阻力) rk4(四阶龙格库塔)
       gravity: 9.8       #重力加速度

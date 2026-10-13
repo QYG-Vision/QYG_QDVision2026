@@ -18,6 +18,8 @@
 
 #include "armor_solver/armor_solver_node.hpp"
 
+#include <cmath>
+
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.hpp>
 #include <sensor_msgs/image_encodings.hpp>
@@ -1037,27 +1039,24 @@ void ArmorSolverNode::setModeCallback(
     FYT_WARN("armor_solver", "Set Mode to {}", visionModeToString(mode));
 }
 
-/**
- * @brief 串口节点回调，更新弹速
- * 
- * @param serial_data 
- */
 void ArmorSolverNode::serialCallback(
     const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data
 ) {
-    double bullet_speed = serial_data->bullet_speed;
+    const double raw_bullet_speed = serial_data->bullet_speed;
+    if (!std::isfinite(raw_bullet_speed) || raw_bullet_speed <= 10.0) {
+        return;
+    }
+
     {
         std::lock_guard<std::mutex> lock(solver_state_mutex_);
         if (solver_ == nullptr) {
             return;
         }
+        // 每条新反馈仅更新一次，避免解算循环重复滤波同一份数据。
+        solver_->update_bullet_speed(raw_bullet_speed);
     }
 
-    if (bullet_speed <= 10.0) {
-        return;
-    }
-
-    auto result = this->set_parameter(rclcpp::Parameter("solver.bullet_speed", bullet_speed));
+    auto result = this->set_parameter(rclcpp::Parameter("solver.bullet_speed", raw_bullet_speed));
 
     if (!result.successful) {
         RCLCPP_WARN(this->get_logger(), "Failed to set bullet_speed parameter");
