@@ -33,6 +33,7 @@
           
     solver:
       use_armor_top: true             # 普通跟随使用装甲板位置 EKF；陀螺仍使用整车模型
+      enable_motion_prediction: true  # false：保留 EKF 和弹道补偿，跳过所有运动外推；支持在线切换
       predict2send_delay: 0.0         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
       additional_prediction_time: 0.0 # 根据角速度，给电控指令的额外预测时间

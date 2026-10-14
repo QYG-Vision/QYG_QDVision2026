@@ -35,6 +35,8 @@ public:
    */
   bool receive(rm_interfaces::msg::SerialReceiveData &data) override;
 
+  uint8_t get_yaw_timing_byte() const override { return yaw_timing_byte_; }
+
   std::vector<rclcpp::SubscriptionBase::SharedPtr> getSubscriptions(rclcpp::Node::SharedPtr node) override;
 
   std::vector<rclcpp::Client<rm_interfaces::srv::SetMode>::SharedPtr> getClients(
@@ -44,6 +46,7 @@ public:
 
 private:
   FixedPacketTool<16>::SharedPtr packet_tool_;
+  uint8_t yaw_timing_byte_ = 0;
 };
 }  // namespace qd::serial_driver::protocol
 

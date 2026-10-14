@@ -151,6 +151,12 @@ private:
     void update_top_level(const double angular_velocity);
 
     double get_ballistic_flying_time(const Eigen::Vector3d& target_pos);
+    /**
+     * @brief 根据运动预测开关返回当前状态或命中时刻的预测状态。
+     * @param state 当前目标状态，位置为目标参考系中的米，速度为米每秒或弧度每秒。
+     * @param base_delay 图像到发送及控制的固定延迟，单位秒。
+     * @return 预测开启时返回命中状态；关闭时原样返回当前状态。
+     */
     State solve_impact_state(const State& state, double base_delay);
     double get_bullet_speed();
 
@@ -257,6 +263,7 @@ private:
     double last_aim_yaw_ = 0.0; // 记录上一帧锁定的装甲板世界 yaw，用于切板滞回
 
     bool use_armor_top_ = false;
+    bool enable_motion_prediction_ = true; // 仅控制解算外推，不修改 EKF 位置和速度估计
 };
 
 } // namespace qd::auto_aim

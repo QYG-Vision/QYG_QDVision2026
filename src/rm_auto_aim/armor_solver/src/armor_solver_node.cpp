@@ -683,6 +683,7 @@ bool ArmorSolverNode::processArmors(
             measure_msg.z = position.z;
             const double horizontal_distance = std::hypot(position.x, position.y);
             measure_msg.center_yaw = std::atan2(position.y, position.x);
+            measure_msg.center_yaw_deg = measure_msg.center_yaw * 180.0 / M_PI;
             measure_msg.pitch = std::atan2(position.z, horizontal_distance);
             measure_msg.distance = std::hypot(horizontal_distance, position.z);
             tf2::Quaternion orientation;
@@ -775,6 +776,7 @@ bool ArmorSolverNode::processArmors(
         measure_msg.y = tracked_pose.position.y;
         measure_msg.z = tracked_pose.position.z;
         measure_msg.center_yaw = tracker_->measurement(0);
+        measure_msg.center_yaw_deg = measure_msg.center_yaw * 180.0 / M_PI;
         measure_msg.pitch = tracker_->measurement(1);
         measure_msg.distance = tracker_->measurement(2);
         measure_msg.yaw = tracker_->measurement(3);

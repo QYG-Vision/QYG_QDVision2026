@@ -40,6 +40,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     resistance = node->declare_parameter("solver.resistance", 0.001);
 
     use_armor_top_ = node->declare_parameter("solver.use_armor_top", false);
+    enable_motion_prediction_ = node->declare_parameter("solver.enable_motion_prediction", true);
 
     // 补偿器
     std::string compenstator_type = node->declare_parameter("solver.compensator_type", "ideal");
@@ -115,6 +116,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
             1.0
         );
         use_armor_top_ = node->get_parameter("solver.use_armor_top").as_bool();
+        enable_motion_prediction_ = node->get_parameter("solver.enable_motion_prediction").as_bool();
         gimble_frame_ = node->get_parameter("gimble_frame").as_string();
         node.reset();
 
@@ -166,10 +168,13 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     gimbal_cmd.id = target.id;
     auto send_ypd = target_aim.aim_ypd;
     auto send_ypd_v = target_aim.aim_ypd_v;
+    // 关闭运动预测时也跳过额外角速度外推，保留速度输出供对照诊断。
+    const double extra_prediction_time =
+        enable_motion_prediction_ ? additional_prediction_time : 0.0;
     gimbal_cmd.yaw =
-        reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * additional_prediction_time)) * 180 / M_PI;
+        reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * extra_prediction_time)) * 180 / M_PI;
     gimbal_cmd.pitch =
-        (send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time)) * 180 / M_PI;
+        (send_ypd.pitch + (send_ypd_v.pitch * extra_prediction_time)) * 180 / M_PI;
     gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
     gimbal_cmd.pitch_diff = reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
     gimbal_cmd.distance = send_ypd.distance;
@@ -266,6 +271,10 @@ double Solver::get_ballistic_flying_time(const Eigen::Vector3d& target_pos) {
   @return 命中时刻的装甲板状态
 */
 State Solver::solve_impact_state(const State& state, double base_delay) {
+    if (!enable_motion_prediction_) {
+        return state;
+    }
+
     constexpr int kMaxIterations = 8;
     constexpr double kTimeTolerance = 1e-3;
     constexpr double kRelaxation = 0.5;
@@ -458,6 +467,10 @@ double Solver::get_bullet_speed() {
   @brief 预测装甲板dt后的向量
 */
 State Solver::state_predict(const State& state, double dt) {
+    if (!enable_motion_prediction_) {
+        return state;
+    }
+
     State state_predict = state;
     state_predict(0) += state_predict(1) * dt;
     state_predict(2) += state_predict(3) * dt;

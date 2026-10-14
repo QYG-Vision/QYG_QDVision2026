@@ -86,6 +86,8 @@ bool DefaultProtocol::receive(rm_interfaces::msg::SerialReceiveData& data) {
     data.yaw = pkt.yaw / 100.0f;
     data.bullet_speed = pkt.bullet_speed / 100.0f;
     data.mcu_timestamp = pkt.mcu_timestamp;
+    // QD 帧尚未启用校验，第 14 字节由新电控携带顶板 yaw 数据年龄。
+    yaw_timing_byte_ = pkt.check_byte;
 
     return true;
 }
