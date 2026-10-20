@@ -114,6 +114,7 @@ else()
 endif()
 
 target_link_libraries(${PROJECT_NAME}
+  qdlogger
   ${OpenCV_LIBS}
   ${CERES_LIBRARIES}
 )
@@ -128,15 +129,8 @@ install(DIRECTORY hikSDK/include/
 )
 
 # Install libraries
-install(TARGETS ${PROJECT_NAME}
+install(TARGETS ${PROJECT_NAME} qdlogger
   EXPORT ${PROJECT_NAME}
-  LIBRARY DESTINATION lib
-  ARCHIVE DESTINATION lib
-  RUNTIME DESTINATION bin
-  INCLUDES DESTINATION include
-)
-install(TARGETS qdlogger
-  EXPORT qdlogger
   LIBRARY DESTINATION lib
   ARCHIVE DESTINATION lib
   RUNTIME DESTINATION bin
@@ -145,7 +139,6 @@ install(TARGETS qdlogger
 
 # export lib lib
 ament_export_targets(${PROJECT_NAME} HAS_LIBRARY_TARGET)
-ament_export_targets(qdlogger HAS_LIBRARY_TARGET)
 ament_export_dependencies(${dependencies} fmt)
 ament_export_include_directories(include)
 

@@ -16,8 +16,8 @@
   <depend>rm_interfaces</depend>
   <depend>fmt</depend>
   <depend>eigen</depend>
-  <depend>opencv</depend>
-  <depend>ceres</depend>
+  <depend>libopencv-dev</depend>
+  <depend>libceres-dev</depend>
   <depend>rcpputils</depend>
   <depend>camera_info_manager</depend>
   <depend>cv_bridge</depend>
