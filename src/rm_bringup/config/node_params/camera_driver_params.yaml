@@ -1,7 +1,7 @@
 # 6mm相机配置
 camera_6mm:
   enable_DeviceSerialNumber: false # 是否使用序列号查找，只使用一个相机改为 false
-  device_serial_number: "DA4845979"  # 相机序列号
+  device_serial_number: "DA8739867"  # 相机序列号
   camera_info_url: "package://rm_bringup/config/camera_info.yaml"  # 相机内参文件路径
   camera_name: "camera_6mm"  # 相机名称
   target_frame: "camera_optical_frame"  # 目标frame_id
@@ -23,8 +23,8 @@ camera_6mm:
 
 # 8mm相机配置
 camera_8mm:
-  enable_DeviceSerialNumber: true # 是否使用序列号查找
-  device_serial_number: "DA4845980"  # 相机序列号
+  enable_DeviceSerialNumber: false # 单相机接入时必须关闭，否则序列号不匹配会导致 handle 为 null
+  device_serial_number: "DA0000000"  # 相机序列号；多相机模式下再启用序列号匹配
   camera_info_url: "package://rm_bringup/config/camera_info_copy.yaml"  # 相机内参文件路径
   camera_name: "camera_8mm"  # 相机名称
   target_frame: "camera_optical_frame2"  # 目标frame_id

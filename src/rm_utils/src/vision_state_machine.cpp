@@ -38,27 +38,81 @@ bool VisionStateMachine::initialize(rclcpp::Node* node, const std::string& confi
     } else {
         // 使用默认配置
         CameraConfig config_near_range; // 近距离相机配置
-        config_near_range.hik_params.device_serial_number =
-            node_->declare_parameter("camera_6mm.device_serial_number", "DA1564615");
-        config_near_range.hik_params.enable_DeviceSerialNumber =
-            node_->declare_parameter("camera_6mm.enable_DeviceSerialNumber", true);
-        config_near_range.hik_params.exposure_time =
-            node_->declare_parameter("camera_6mm.exposure_time", 1800.0);
-        config_near_range.hik_params.gain = node_->declare_parameter("camera_6mm.gain", 1.0);
-        config_near_range.hik_params.frame_rate =
-            node_->declare_parameter("camera_6mm.acquisition_frame_rate", 200.0);
-        config_near_range.hik_params.enable_frame_rate =
-            node_->declare_parameter("camera_6mm.enable_frame_rate", true);
-        config_near_range.hik_params.pixel_format =
-            node_->declare_parameter("camera_6mm.pixel_format", "BayerRG8");
-        config_near_range.hik_params.adc_bit_depth =
-            node_->declare_parameter("camera_6mm.adc_bit_depth", "ADCBitDepth_8");
-        config_near_range.hik_params.cvt_quality =
-            node_->declare_parameter("camera_6mm.cvt_quality", 2);
-        config_near_range.hik_params.reverseXY =
-            node_->declare_parameter("camera_6mm.ReverseXY", false);
-        config_near_range.hik_params.enable_opencv =
-            node_->declare_parameter("camera_6mm.enable_opencv", false);
+        if (!node_->has_parameter("camera_6mm.device_serial_number")) {
+            config_near_range.hik_params.device_serial_number =
+                node_->declare_parameter("camera_6mm.device_serial_number", "DA1564615");
+        } else {
+            config_near_range.hik_params.device_serial_number =
+                node_->get_parameter("camera_6mm.device_serial_number").as_string();
+        }
+        if (!node_->has_parameter("camera_6mm.enable_DeviceSerialNumber")) {
+            config_near_range.hik_params.enable_DeviceSerialNumber =
+                node_->declare_parameter("camera_6mm.enable_DeviceSerialNumber", true);
+        } else {
+            config_near_range.hik_params.enable_DeviceSerialNumber =
+                node_->get_parameter("camera_6mm.enable_DeviceSerialNumber").as_bool();
+        }
+        if (!node_->has_parameter("camera_6mm.exposure_time")) {
+            config_near_range.hik_params.exposure_time =
+                node_->declare_parameter("camera_6mm.exposure_time", 1800.0);
+        } else {
+            config_near_range.hik_params.exposure_time =
+                node_->get_parameter("camera_6mm.exposure_time").as_double();
+        }
+        if (!node_->has_parameter("camera_6mm.gain")) {
+            config_near_range.hik_params.gain = node_->declare_parameter("camera_6mm.gain", 1.0);
+        } else {
+            config_near_range.hik_params.gain = node_->get_parameter("camera_6mm.gain").as_double();
+        }
+        if (!node_->has_parameter("camera_6mm.acquisition_frame_rate")) {
+            config_near_range.hik_params.frame_rate =
+                node_->declare_parameter("camera_6mm.acquisition_frame_rate", 200.0);
+        } else {
+            config_near_range.hik_params.frame_rate =
+                node_->get_parameter("camera_6mm.acquisition_frame_rate").as_double();
+        }
+        if (!node_->has_parameter("camera_6mm.enable_frame_rate")) {
+            config_near_range.hik_params.enable_frame_rate =
+                node_->declare_parameter("camera_6mm.enable_frame_rate", true);
+        } else {
+            config_near_range.hik_params.enable_frame_rate =
+                node_->get_parameter("camera_6mm.enable_frame_rate").as_bool();
+        }
+        if (!node_->has_parameter("camera_6mm.pixel_format")) {
+            config_near_range.hik_params.pixel_format =
+                node_->declare_parameter("camera_6mm.pixel_format", "BayerRG8");
+        } else {
+            config_near_range.hik_params.pixel_format =
+                node_->get_parameter("camera_6mm.pixel_format").as_string();
+        }
+        if (!node_->has_parameter("camera_6mm.adc_bit_depth")) {
+            config_near_range.hik_params.adc_bit_depth =
+                node_->declare_parameter("camera_6mm.adc_bit_depth", "ADCBitDepth_8");
+        } else {
+            config_near_range.hik_params.adc_bit_depth =
+                node_->get_parameter("camera_6mm.adc_bit_depth").as_string();
+        }
+        if (!node_->has_parameter("camera_6mm.cvt_quality")) {
+            config_near_range.hik_params.cvt_quality =
+                node_->declare_parameter("camera_6mm.cvt_quality", 2);
+        } else {
+            config_near_range.hik_params.cvt_quality =
+                node_->get_parameter("camera_6mm.cvt_quality").as_int();
+        }
+        if (!node_->has_parameter("camera_6mm.ReverseXY")) {
+            config_near_range.hik_params.reverseXY =
+                node_->declare_parameter("camera_6mm.ReverseXY", false);
+        } else {
+            config_near_range.hik_params.reverseXY =
+                node_->get_parameter("camera_6mm.ReverseXY").as_bool();
+        }
+        if (!node_->has_parameter("camera_6mm.enable_opencv")) {
+            config_near_range.hik_params.enable_opencv =
+                node_->declare_parameter("camera_6mm.enable_opencv", false);
+        } else {
+            config_near_range.hik_params.enable_opencv =
+                node_->get_parameter("camera_6mm.enable_opencv").as_bool();
+        }
         config_near_range.camera_info_url = node_->declare_parameter(
             "camera_6mm.camera_info_url",
             "package://rm_bringup/config/camera_info.yaml"
@@ -74,27 +128,81 @@ bool VisionStateMachine::initialize(rclcpp::Node* node, const std::string& confi
         camera_configs_[CameraType::CAMERA_NEAR_RANGE] = config_near_range;
 
         CameraConfig config_far_range; // 远距离相机配置
-        config_far_range.hik_params.device_serial_number =
-            node_->declare_parameter("camera_8mm.device_serial_number", "DA1041822");
-        config_far_range.hik_params.enable_DeviceSerialNumber =
-            node_->declare_parameter("camera_8mm.enable_DeviceSerialNumber", true);
-        config_far_range.hik_params.exposure_time =
-            node_->declare_parameter("camera_8mm.exposure_time", 1800.0);
-        config_far_range.hik_params.gain = node_->declare_parameter("camera_8mm.gain", 1.0);
-        config_far_range.hik_params.frame_rate =
-            node_->declare_parameter("camera_8mm.acquisition_frame_rate", 200.0);
-        config_far_range.hik_params.enable_frame_rate =
-            node_->declare_parameter("camera_8mm.enable_frame_rate", true);
-        config_far_range.hik_params.pixel_format =
-            node_->declare_parameter("camera_8mm.pixel_format", "BayerRG8");
-        config_far_range.hik_params.adc_bit_depth =
-            node_->declare_parameter("camera_8mm.adc_bit_depth", "ADCBitDepth_8");
-        config_far_range.hik_params.cvt_quality =
-            node_->declare_parameter("camera_8mm.cvt_quality", 2);
-        config_far_range.hik_params.reverseXY =
-            node_->declare_parameter("camera_8mm.ReverseXY", false);
-        config_far_range.hik_params.enable_opencv =
-            node_->declare_parameter("camera_8mm.enable_opencv", false);
+        if (!node_->has_parameter("camera_8mm.device_serial_number")) {
+            config_far_range.hik_params.device_serial_number =
+                node_->declare_parameter("camera_8mm.device_serial_number", "DA1041822");
+        } else {
+            config_far_range.hik_params.device_serial_number =
+                node_->get_parameter("camera_8mm.device_serial_number").as_string();
+        }
+        if (!node_->has_parameter("camera_8mm.enable_DeviceSerialNumber")) {
+            config_far_range.hik_params.enable_DeviceSerialNumber =
+                node_->declare_parameter("camera_8mm.enable_DeviceSerialNumber", true);
+        } else {
+            config_far_range.hik_params.enable_DeviceSerialNumber =
+                node_->get_parameter("camera_8mm.enable_DeviceSerialNumber").as_bool();
+        }
+        if (!node_->has_parameter("camera_8mm.exposure_time")) {
+            config_far_range.hik_params.exposure_time =
+                node_->declare_parameter("camera_8mm.exposure_time", 1800.0);
+        } else {
+            config_far_range.hik_params.exposure_time =
+                node_->get_parameter("camera_8mm.exposure_time").as_double();
+        }
+        if (!node_->has_parameter("camera_8mm.gain")) {
+            config_far_range.hik_params.gain = node_->declare_parameter("camera_8mm.gain", 1.0);
+        } else {
+            config_far_range.hik_params.gain = node_->get_parameter("camera_8mm.gain").as_double();
+        }
+        if (!node_->has_parameter("camera_8mm.acquisition_frame_rate")) {
+            config_far_range.hik_params.frame_rate =
+                node_->declare_parameter("camera_8mm.acquisition_frame_rate", 200.0);
+        } else {
+            config_far_range.hik_params.frame_rate =
+                node_->get_parameter("camera_8mm.acquisition_frame_rate").as_double();
+        }
+        if (!node_->has_parameter("camera_8mm.enable_frame_rate")) {
+            config_far_range.hik_params.enable_frame_rate =
+                node_->declare_parameter("camera_8mm.enable_frame_rate", true);
+        } else {
+            config_far_range.hik_params.enable_frame_rate =
+                node_->get_parameter("camera_8mm.enable_frame_rate").as_bool();
+        }
+        if (!node_->has_parameter("camera_8mm.pixel_format")) {
+            config_far_range.hik_params.pixel_format =
+                node_->declare_parameter("camera_8mm.pixel_format", "BayerRG8");
+        } else {
+            config_far_range.hik_params.pixel_format =
+                node_->get_parameter("camera_8mm.pixel_format").as_string();
+        }
+        if (!node_->has_parameter("camera_8mm.adc_bit_depth")) {
+            config_far_range.hik_params.adc_bit_depth =
+                node_->declare_parameter("camera_8mm.adc_bit_depth", "ADCBitDepth_8");
+        } else {
+            config_far_range.hik_params.adc_bit_depth =
+                node_->get_parameter("camera_8mm.adc_bit_depth").as_string();
+        }
+        if (!node_->has_parameter("camera_8mm.cvt_quality")) {
+            config_far_range.hik_params.cvt_quality =
+                node_->declare_parameter("camera_8mm.cvt_quality", 2);
+        } else {
+            config_far_range.hik_params.cvt_quality =
+                node_->get_parameter("camera_8mm.cvt_quality").as_int();
+        }
+        if (!node_->has_parameter("camera_8mm.ReverseXY")) {
+            config_far_range.hik_params.reverseXY =
+                node_->declare_parameter("camera_8mm.ReverseXY", false);
+        } else {
+            config_far_range.hik_params.reverseXY =
+                node_->get_parameter("camera_8mm.ReverseXY").as_bool();
+        }
+        if (!node_->has_parameter("camera_8mm.enable_opencv")) {
+            config_far_range.hik_params.enable_opencv =
+                node_->declare_parameter("camera_8mm.enable_opencv", false);
+        } else {
+            config_far_range.hik_params.enable_opencv =
+                node_->get_parameter("camera_8mm.enable_opencv").as_bool();
+        }
         config_far_range.camera_info_url = node_->declare_parameter(
             "camera_8mm.camera_info_url",
             "package://rm_bringup/config/camera_info_copy.yaml"
@@ -607,11 +715,13 @@ bool VisionStateMachine::loadConfig(const std::string& config_file) {
             auto& cfg = camera_configs_[CameraType::CAMERA_NEAR_RANGE];
             cfg.hik_params.device_serial_number =
                 config["camera_6mm"]["device_serial_number"].as<std::string>();
-            cfg.hik_params.enable_DeviceSerialNumber = true;
+            cfg.hik_params.enable_DeviceSerialNumber =
+                config["camera_6mm"]["enable_DeviceSerialNumber"].as<bool>(false);
             cfg.hik_params.exposure_time = config["camera_6mm"]["exposure_time"].as<double>();
             cfg.hik_params.gain = config["camera_6mm"]["gain"].as<double>();
             cfg.hik_params.frame_rate = config["camera_6mm"]["acquisition_frame_rate"].as<double>();
-            cfg.hik_params.enable_frame_rate = true;
+            cfg.hik_params.enable_frame_rate =
+                config["camera_6mm"]["enable_frame_rate"].as<bool>(true);
             cfg.hik_params.pixel_format = config["camera_6mm"]["pixel_format"].as<std::string>();
             cfg.hik_params.adc_bit_depth = config["camera_6mm"]["adc_bit_depth"].as<std::string>();
             cfg.hik_params.cvt_quality = config["camera_6mm"]["cvt_quality"].as<int>();
@@ -630,11 +740,13 @@ bool VisionStateMachine::loadConfig(const std::string& config_file) {
             auto& cfg = camera_configs_[CameraType::CAMERA_FAR_RANGE];
             cfg.hik_params.device_serial_number =
                 config["camera_8mm"]["device_serial_number"].as<std::string>();
-            cfg.hik_params.enable_DeviceSerialNumber = true;
+            cfg.hik_params.enable_DeviceSerialNumber =
+                config["camera_8mm"]["enable_DeviceSerialNumber"].as<bool>(false);
             cfg.hik_params.exposure_time = config["camera_8mm"]["exposure_time"].as<double>();
             cfg.hik_params.gain = config["camera_8mm"]["gain"].as<double>();
             cfg.hik_params.frame_rate = config["camera_8mm"]["acquisition_frame_rate"].as<double>();
-            cfg.hik_params.enable_frame_rate = true;
+            cfg.hik_params.enable_frame_rate =
+                config["camera_8mm"]["enable_frame_rate"].as<bool>(true);
             cfg.hik_params.pixel_format = config["camera_8mm"]["pixel_format"].as<std::string>();
             cfg.hik_params.adc_bit_depth = config["camera_8mm"]["adc_bit_depth"].as<std::string>();
             cfg.hik_params.cvt_quality = config["camera_8mm"]["cvt_quality"].as<int>();

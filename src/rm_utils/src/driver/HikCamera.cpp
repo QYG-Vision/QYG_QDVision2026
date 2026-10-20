@@ -157,6 +157,8 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         nRet = MV_CC_OpenDevice(handle);
         if (nRet != MV_OK) {
             printf("OpenDevice failed! nRet [0x%x]\n", nRet);
+            MV_CC_CloseDevice(handle);
+            MV_CC_DestroyHandle(&handle);
             continue;
         }
 
@@ -165,7 +167,7 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         std::cout << "Found DeviceSerialNumber: " << string_value.chCurValue << std::endl;
 
         MV_CC_CloseDevice(handle);
-        MV_CC_DestroyHandle(handle);
+        MV_CC_DestroyHandle(&handle);
 
         // 比较序列号
         if (std::string(string_value.chCurValue) == params.device_serial_number) {
@@ -185,8 +187,20 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
     // 打开设备
     nRet = MV_CC_CreateHandle(&handle, device_info);
     printf("MV_CC_CreateHandle! nRet [0x%x]\n", nRet);
+    if (nRet != MV_OK) {
+        printf("CreateHandle failed for target camera! nRet [0x%x]\n", nRet);
+        return nullptr;
+    }
+
     nRet = MV_CC_OpenDevice(handle);
     printf("MV_CC_OpenDevice! nRet [0x%x]\n", nRet);
+    if (nRet != MV_OK) {
+        printf("OpenDevice failed for target camera! nRet [0x%x]\n", nRet);
+        MV_CC_CloseDevice(handle);
+        MV_CC_DestroyHandle(&handle);
+        return nullptr;
+    }
+
     MV_CC_GetStringValue(handle, "DeviceSerialNumber", &string_value);
     std::cout << "Select DeviceSerialNumber: " << string_value.chCurValue << std::endl;
     // 设置相机参数
@@ -194,6 +208,13 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
     // 开始取流
     nRet = MV_CC_StartGrabbing(handle);
     printf("MV_CC_StartGrabbing! nRet [0x%x]\n", nRet);
+    if (nRet != MV_OK) {
+        printf("StartGrabbing failed! nRet [0x%x]\n", nRet);
+        MV_CC_StopGrabbing(handle);
+        MV_CC_CloseDevice(handle);
+        MV_CC_DestroyHandle(&handle);
+        return nullptr;
+    }
 
     return handle;
 }

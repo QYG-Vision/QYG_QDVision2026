@@ -1,4 +1,4 @@
-// Created by Chengfu Zou on 2023.7.6
+ls -l /dev/ttyUSB0// Created by Chengfu Zou on 2023.7.6
 // Copyright (C) FYT Vision Group. All rights reserved.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");

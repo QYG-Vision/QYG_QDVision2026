@@ -190,7 +190,16 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
         // 状态机线程模式：启动状态机和图像处理线程
         state_machine_.initialize(this);
         state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE);
-        state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE);
+
+        // 单相机模式下，必须显式开启远距离相机；避免因为强制初始化第二台相机导致 OpenDevice 失败。
+        if (!this->has_parameter("camera_8mm.enable_DeviceSerialNumber")) {
+            this->declare_parameter("camera_8mm.enable_DeviceSerialNumber", false);
+        }
+        const bool enable_far_range_camera =
+            this->get_parameter("camera_8mm.enable_DeviceSerialNumber").as_bool();
+        if (enable_far_range_camera) {
+            state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE);
+        }
     } else {
         // 话题订阅模式：订阅图像话题，使用 imageCallback
         img_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
