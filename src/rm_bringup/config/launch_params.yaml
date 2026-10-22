@@ -1,6 +1,6 @@
 gimbal2camera:
- xyz: "\"0.113477 0.000547 0.087106\""
- rpy: "\"-0.017381 -0.077217 0.007199\""
+ xyz: "\"0.116153 -0.000372 0.075125\""
+ rpy: "\"-0.052529 -0.118915 0.009291\""
 #第二个头的gimbal2camera
  xyz_: "\"0 0 0\""
  rpy_: "\"0 0 0\""
@@ -11,7 +11,12 @@ namespace: ""
 show_auto_aim_view: false
 # 图像获取方式
 # true: 状态机线程模式(image_callback) false: 话题订阅模式(imageCallback)
-use_state_machine_camera: false
+use_state_machine_camera: true
+# 网口相机位于 10.99.99.0/24；实体相机启动前为该网卡添加本机地址
+camera_network:
+  enabled: true
+  interface: enp2s0
+  address: 10.99.99.2/24
 # true: 随自瞄启动 Foxglove Bridge，供远程查看节点、话题和 TF
 enable_foxglove_bridge: false
 # true: 英雄解算 false: 传统解算

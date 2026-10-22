@@ -42,6 +42,10 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
     // use_ba_ = this->declare_parameter("use_ba", true);
 
     max_yaw_angle_ = this->declare_parameter("max_yaw_angle", 60.0);
+    const int startup_skip_detections = this->declare_parameter("startup_skip_detections", 5);
+    startup_detections_remaining_.store(
+        startup_skip_detections > 0 ? startup_skip_detections : 0
+    );
 
     // Armors Publisher
     armors_pub_ = this->create_publisher<rm_interfaces::msg::Armors>(
@@ -355,6 +359,20 @@ void ArmorDetectorNode::processImageAndPublish(
         pnp_timer.stop();
     } else {
         FYT_WARN("armor_detector", "PnP Failed!");
+    }
+
+    if (!armors_msg.empty()) {
+        int remaining = startup_detections_remaining_.load();
+        while (remaining > 0) {
+            if (startup_detections_remaining_.compare_exchange_weak(remaining, remaining - 1)) {
+                FYT_INFO(
+                    "armor_detector",
+                    "Skipping startup armor detection result ({} remaining)",
+                    remaining - 1
+                );
+                return;
+            }
+        }
     }
 
     // 发布marker（用于可视化）

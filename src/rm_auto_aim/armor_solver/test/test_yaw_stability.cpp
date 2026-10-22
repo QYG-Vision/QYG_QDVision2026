@@ -1,5 +1,6 @@
 #include "armor_solver/armor_solver.hpp"
 #include "armor_solver/armor_yaw_solver.hpp"
+#include "armor_solver/yaw_command_filter.hpp"
 
 #include <cmath>
 #include <memory>
@@ -9,6 +10,26 @@
 
 namespace qd::auto_aim {
 namespace {
+    TEST(YawCommandFilterTest, SmoothsCorrectionsOncePerImageAndKeepsSmallDeadband) {
+        YawCommandFilter filter(0.25, 0.15);
+        EXPECT_DOUBLE_EQ(filter.update(-14.0, 1, "3"), -14.0);
+        EXPECT_DOUBLE_EQ(filter.update(-22.0, 2, "3"), -16.0);
+        EXPECT_DOUBLE_EQ(filter.update(-22.0, 2, "3"), -16.0);
+        EXPECT_DOUBLE_EQ(filter.update(-10.0, 3, "3"), -14.5);
+        EXPECT_DOUBLE_EQ(filter.update(-14.6, 4, "3"), -14.5);
+        EXPECT_DOUBLE_EQ(filter.update(-14.6, 5, "3"), -14.5);
+        EXPECT_DOUBLE_EQ(filter.update(-15.0, 6, "4"), -15.0);
+        filter.reset();
+        EXPECT_DOUBLE_EQ(filter.update(20.0, 7, "4"), 20.0);
+    }
+
+    TEST(YawCommandFilterTest, UsesShortestAngleAcrossWraparound) {
+        YawCommandFilter filter(0.25, 0.0);
+        EXPECT_DOUBLE_EQ(filter.update(179.0, 1, "3"), 179.0);
+        EXPECT_DOUBLE_EQ(filter.update(-179.0, 2, "3"), 179.5);
+        EXPECT_DOUBLE_EQ(filter.update(-179.0, 3, "3"), 179.875);
+    }
+
     class YawStabilityTest: public testing::Test {
     protected:
         static void SetUpTestSuite() {

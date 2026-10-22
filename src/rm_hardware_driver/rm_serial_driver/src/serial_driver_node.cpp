@@ -147,12 +147,6 @@ void SerialDriverNode::listenLoop() {
                 real_gimbal_time += rclcpp::Duration::from_seconds(timestamp_offset_);
             }
 
-            FYT_DEBUG(
-                "serial_driver",
-                " Serial communication delay: {:.2f} ms",
-                (pc_now - real_gimbal_time).seconds() * 1e3
-            );
-
             receive_data.header.stamp = real_gimbal_time;
             receive_data.header.frame_id = target_frame_;
 

@@ -48,6 +48,7 @@
 #include "armor_solver/armor_tracker.hpp"
 // #include "armor_solver/solveYawPnP.hpp"
 #include "armor_solver/armor_yaw_solver.hpp"
+#include "armor_solver/yaw_command_filter.hpp"
 #include "rm_interfaces/msg/armors.hpp"
 #include "rm_interfaces/msg/measurement.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
@@ -137,6 +138,8 @@ private:
 
     // Armor Solver
     std::unique_ptr<Solver> solver_;
+    YawCommandFilter yaw_command_filter_;
+    double yaw_filter_fire_tolerance_deg_ { 0.5 };
 
     // Armor Yaw Solver
     std::unique_ptr<SolveYawPnP> solveYawPnP_;

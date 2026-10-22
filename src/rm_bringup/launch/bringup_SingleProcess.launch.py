@@ -1,4 +1,5 @@
 import os
+import subprocess
 import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
@@ -13,6 +14,26 @@ from launch.actions import TimerAction
 
 sys.path.append(os.path.join(get_package_share_directory('rm_bringup'), 'launch'))
 
+def ensure_camera_network(network_config):
+    """确保网口相机使用的网卡具有指定的本机地址。"""
+    interface = network_config['interface']
+    address = network_config['address']
+    try:
+        result = subprocess.run(
+            ['ip', '-o', '-4', 'addr', 'show', 'dev', interface],
+            check=True, capture_output=True, text=True)
+        if any(line.split()[3] == address for line in result.stdout.splitlines()):
+            return
+        subprocess.run(
+            ['ip', 'addr', 'add', address, 'dev', interface],
+            check=True, capture_output=True, text=True)
+        print(f'[rm_bringup] Added {address} to {interface} for the GigE camera.')
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = exc.stderr.strip() if isinstance(exc, subprocess.CalledProcessError) else str(exc)
+        raise RuntimeError(
+            f'Failed to configure GigE camera network ({interface}, {address}): {detail}'
+        ) from exc
+
 def generate_launch_description():
 
     # 载入参数
@@ -24,6 +45,13 @@ def generate_launch_description():
         launch_params['use_state_machine_camera'] = False
         launch_params['video_player'] = False
         launch_params['virtual_serial'] = False
+
+    # 使用实体相机时，在驱动加载前配置网口相机所在的网段。
+    use_physical_camera = not launch_params.get('replay', False) and (
+        launch_params['use_state_machine_camera'] or not launch_params.get('video_player', False))
+    camera_network = launch_params.get('camera_network', {})
+    if use_physical_camera and camera_network.get('enabled', False):
+        ensure_camera_network(camera_network)
 
     if launch_params.get('record', False) and launch_params.get('auto_record', False):
         print('[rm_bringup] record and auto_record cannot both be true; disabling record.')

@@ -66,6 +66,12 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
 
     debug_mode_ = this->declare_parameter("debug", true);
     enable_ekf_ = this->declare_parameter("enable_ekf", true);
+    yaw_command_filter_ = YawCommandFilter(
+        this->declare_parameter("solver.yaw_filter_alpha", 0.25),
+        this->declare_parameter("solver.yaw_filter_deadband_deg", 0.15)
+    );
+    yaw_filter_fire_tolerance_deg_ =
+        this->declare_parameter("solver.yaw_filter_fire_tolerance_deg", 0.5);
 
     // Tracker 初始化参数
     double max_match_distance = this->declare_parameter("tracker.max_match_distance", 0.2);
@@ -178,6 +184,8 @@ ArmorSolverNode::~ArmorSolverNode() {
 void ArmorSolverNode::timerCallback() {
     enable_ = state_machine_.shouldDetect();
     if (!enable_ || !enable_ekf_) {
+        std::lock_guard<std::mutex> lock(solver_state_mutex_);
+        yaw_command_filter_.reset();
         return;
     }
 
@@ -201,6 +209,7 @@ void ArmorSolverNode::timerCallback() {
 
     // If target never detected
     if (armor_target_.header.frame_id.empty()) {
+        yaw_command_filter_.reset();
         gimbal_pub_->publish(std::make_unique<rm_interfaces::msg::GimbalCmd>(std::move(control_msg))
         );
         return;
@@ -224,9 +233,34 @@ void ArmorSolverNode::timerCallback() {
 
             control_msg.header.stamp = solve_start_time;
 
+            if (std::isfinite(control_msg.yaw) && std::isfinite(control_msg.pitch)
+                && std::isfinite(control_msg.distance) && control_msg.distance > 0.0)
+            {
+                const double raw_yaw_deg = control_msg.yaw;
+                control_msg.yaw = yaw_command_filter_.update(
+                    raw_yaw_deg, rclcpp::Time(armor_target_.header.stamp).nanoseconds(),
+                    armor_target_.id
+                );
+                if (std::abs(std::remainder(raw_yaw_deg - control_msg.yaw, 360.0))
+                    > yaw_filter_fire_tolerance_deg_)
+                {
+                    control_msg.fire_advice = false;
+                }
+            } else {
+                yaw_command_filter_.reset();
+                control_msg.id = "0";
+                control_msg.distance = -1.0;
+                control_msg.fire_advice = false;
+                control_msg.yaw = 0.0;
+                control_msg.pitch = 0.0;
+            }
+
         } catch (...) {
+            yaw_command_filter_.reset();
             FYT_ERROR("armor_solver", "Something went wrong in solver!");
         }
+    } else {
+        yaw_command_filter_.reset();
     }
 
     publishMarkers(armor_target_, control_msg);
