@@ -52,6 +52,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_bullet_speed_state test/test_bullet_speed_state.cpp)
   target_include_directories(test_bullet_speed_state PRIVATE include)
 
+  ament_add_gtest(test_tracker_prediction test/test_tracker_prediction.cpp)
+  target_link_libraries(test_tracker_prediction ${PROJECT_NAME})
+
 endif()
 
 #############

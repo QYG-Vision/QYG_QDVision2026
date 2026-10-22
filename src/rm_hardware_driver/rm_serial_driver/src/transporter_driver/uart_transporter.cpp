@@ -128,7 +128,8 @@ bool UartTransporter::setParam(int speed, int flow_ctrl, int databits, int stopb
   options.c_oflag &= ~OPOST;
   options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
   // 传输特殊字符，否则特殊字符0x0d,0x11,0x13会被屏蔽或映射。
-  options.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+  // 清除继承的 PARMRK，避免有效字节 0xff 被转义成 0xff 0xff，破坏定长帧。
+  options.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON | PARMRK);
 
   // 设置等待时间和最小接收字符
   options.c_cc[VTIME] = 1;  // 读取一个字符等待1*(1/10)s

@@ -154,6 +154,9 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest REQUIRED)
   ament_add_gtest(test_trajectory_compensator test/test_trajectory_compensator.cpp)
   target_link_libraries(test_trajectory_compensator ${PROJECT_NAME} Eigen3::Eigen)
+
+  ament_add_gtest(test_hik_camera test/test_hik_camera.cpp)
+  target_link_libraries(test_hik_camera ${PROJECT_NAME})
 endif()
 
 ament_package()

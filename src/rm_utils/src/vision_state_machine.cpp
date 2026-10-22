@@ -264,6 +264,13 @@ bool VisionStateMachine::initializeCamera(CameraType camera_type) {
         return false;
     }
 
+    // SDK 打开设备期间可能收到退出信号，此时不能再创建 CameraInfoManager 的 ROS 服务。
+    if (!rclcpp::ok(node_->get_node_base_interface()->get_context())) {
+        closeCamera(camera_type);
+        FYT_INFO("vision_state_machine", "Camera initialization interrupted by shutdown");
+        return false;
+    }
+
     // 加载相机内参
     load_camera_info_managers(camera_type, config);
 

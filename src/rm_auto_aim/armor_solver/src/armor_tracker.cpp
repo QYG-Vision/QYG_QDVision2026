@@ -67,12 +67,8 @@ void Tracker::init(const Armors::SharedPtr& armors_msg) noexcept {
 }
 
 void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
-    if (armors_msg->armors.empty()) {
-        updateTracker(false);
-        return;
-    }
-
     utils::AutoTimer timer("armor_solver", "Tracker::update");
+    // 丢检帧也要推进两个运动模型，避免旧状态配上新时间戳后形成指令平台。
     updateArmorStateEKF(armors_msg);
 
     // EKF predict
@@ -152,6 +148,7 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
 
     updateTracker(matched);
     if (!matched) {
+        computeArmorParams();
         return;
     }
 
@@ -252,12 +249,9 @@ void Tracker::computeArmorParams() noexcept {
 
 // 平移运动模型更新
 void Tracker::updateArmorStateEKF(const Armors::SharedPtr& armors_msg) noexcept {
-    if (armors_msg->armors.empty()) {
-        return;
-    }
-    Eigen::VectorXd ekf_prediction = ekf_point->predict();
+    armor_state = ekf_point->predict();
     auto predicted_position =
-        Eigen::Vector3d(ekf_prediction(0), ekf_prediction(2), ekf_prediction(4));
+        Eigen::Vector3d(armor_state(0), armor_state(2), armor_state(4));
 
     bool matched = false;
     double min_distance = DBL_MAX;

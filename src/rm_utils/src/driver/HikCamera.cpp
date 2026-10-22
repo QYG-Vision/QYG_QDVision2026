@@ -12,13 +12,16 @@ HikCamera::HikCamera(const Parameters& params): queue_(1), camera_handle_(nullpt
 
 HikCamera::~HikCamera() {
     running_ = false;
+    // 等待取图线程退出后再释放句柄，避免线程继续访问已关闭的设备。
+    if (daemon_thread_.joinable()) {
+        daemon_thread_.join();
+    }
     if (camera_handle_ != nullptr) {
         MV_CC_StopGrabbing(camera_handle_);
         MV_CC_CloseDevice(camera_handle_);
-        MV_CC_DestroyHandle(&camera_handle_);
-    }
-    if (daemon_thread_.joinable()) {
-        daemon_thread_.join();
+        // DestroyHandle 接收句柄本身，只有 CreateHandle 才接收句柄地址。
+        MV_CC_DestroyHandle(camera_handle_);
+        camera_handle_ = nullptr;
     }
 }
 
@@ -119,7 +122,7 @@ void HikCamera::read_img(cv::Mat& img, std::chrono::system_clock::time_point& ti
 }
 
 void* HikCamera::get_camera_handle(const Parameters& params) {
-    void* handle;
+    void* handle = nullptr;
     MVCC_STRINGVALUE string_value;
 
     // 枚举设备
@@ -158,7 +161,7 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         if (nRet != MV_OK) {
             printf("OpenDevice failed! nRet [0x%x]\n", nRet);
             MV_CC_CloseDevice(handle);
-            MV_CC_DestroyHandle(&handle);
+            MV_CC_DestroyHandle(handle);
             continue;
         }
 
@@ -167,7 +170,7 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         std::cout << "Found DeviceSerialNumber: " << string_value.chCurValue << std::endl;
 
         MV_CC_CloseDevice(handle);
-        MV_CC_DestroyHandle(&handle);
+        MV_CC_DestroyHandle(handle);
 
         // 比较序列号
         if (std::string(string_value.chCurValue) == params.device_serial_number) {
@@ -197,7 +200,7 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
     if (nRet != MV_OK) {
         printf("OpenDevice failed for target camera! nRet [0x%x]\n", nRet);
         MV_CC_CloseDevice(handle);
-        MV_CC_DestroyHandle(&handle);
+        MV_CC_DestroyHandle(handle);
         return nullptr;
     }
 
@@ -212,7 +215,7 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         printf("StartGrabbing failed! nRet [0x%x]\n", nRet);
         MV_CC_StopGrabbing(handle);
         MV_CC_CloseDevice(handle);
-        MV_CC_DestroyHandle(&handle);
+        MV_CC_DestroyHandle(handle);
         return nullptr;
     }
 

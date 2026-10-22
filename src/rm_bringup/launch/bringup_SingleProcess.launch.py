@@ -205,6 +205,18 @@ def generate_launch_description():
         set_domain_id,
         container
     ]
+    if launch_params.get('foxglove_bridge', False):
+        actions.append(Node(
+            package='foxglove_bridge',
+            executable='foxglove_bridge',
+            name='foxglove_bridge',
+            parameters=[{'address': '0.0.0.0', 'port': 8765}],
+            output='screen'
+        ))
+    else:
+        print('[rm_bringup] Foxglove bridge is disabled. To start it manually: '
+              'ros2 run foxglove_bridge foxglove_bridge --ros-args -p port:=8765')
+
     if launch_params.get('enable_dynamic_camera_tf', True):
         # 动态 TF 调参节点（用于调试相机安装的 rpy 误差）
         # 使用 ros2 param set /dynamic_camera_tf pitch 0.02 来调整

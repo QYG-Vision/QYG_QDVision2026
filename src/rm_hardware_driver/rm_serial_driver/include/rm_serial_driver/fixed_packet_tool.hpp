@@ -45,6 +45,10 @@ public:
       throw std::invalid_argument("transporter is nullptr");
     }
     FYT_REGISTER_LOGGER("serial_driver", "qd2026-log", INFO);
+    // 首次读写前先打开设备，避免对无效描述符读写后才触发重连。
+    if (!transporter_->isOpen() && !transporter_->open()) {
+      FYT_WARN("serial_driver", "Failed to open transporter: {}", transporter_->errorMessage());
+    }
   }
 
   ~FixedPacketTool() { enbaleRealtimeSend(false); }

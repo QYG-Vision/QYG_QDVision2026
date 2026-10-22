@@ -13,6 +13,7 @@
   <depend>rm_auto_aim</depend>
   <depend>rm_serial_driver</depend>
   <depend>rm_rune</depend>
+  <exec_depend>foxglove_bridge</exec_depend>
   
   <!-- 动态 TF 调参节点依赖 -->
   <exec_depend>rclpy</exec_depend>

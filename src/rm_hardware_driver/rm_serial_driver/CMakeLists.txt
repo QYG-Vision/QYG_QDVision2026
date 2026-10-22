@@ -55,6 +55,9 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_fixed_packet_tool test/test_fixed_packet_tool.cpp)
   target_link_libraries(test_fixed_packet_tool ${PROJECT_NAME})
+
+  ament_add_gtest(test_uart_transporter test/test_uart_transporter.cpp)
+  target_link_libraries(test_uart_transporter ${PROJECT_NAME})
 endif()
 
 #############
