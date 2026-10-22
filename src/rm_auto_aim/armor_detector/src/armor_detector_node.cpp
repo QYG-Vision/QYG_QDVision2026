@@ -194,7 +194,8 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
         // 状态机线程模式：启动状态机和图像处理线程
         state_machine_.initialize(this);
         state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE);
-        state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE);
+        // 当前未安装 8 mm 相机，暂时只初始化 6 mm 相机。
+        // state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE);
     } else {
         // 话题订阅模式：订阅图像话题，使用 imageCallback
         img_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
@@ -620,14 +621,13 @@ ArmorDetectorNode::onSetParameters(std::vector<rclcpp::Parameter> parameters) {
             }
         }
         // 相机参数更改 - 曝光时间
-        if (param.get_name() == "camera_6mm.exposure_time"
-            || param.get_name() == "camera_8mm.exposure_time")
+        if (param.get_name() == "camera_6mm.exposure_time")
         {
             state_machine_.updateExposureTime(param.as_double());
             FYT_INFO("armor_detector", "Updated exposure_time to: {}", param.as_double());
         }
         // 相机参数更改 - 增益
-        else if (param.get_name() == "camera_6mm.gain" || param.get_name() == "camera_8mm.gain")
+        else if (param.get_name() == "camera_6mm.gain")
         {
             state_machine_.updateGain(param.as_double());
             FYT_INFO("armor_detector", "Updated gain to: {}", param.as_double());

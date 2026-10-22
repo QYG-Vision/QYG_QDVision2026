@@ -18,7 +18,9 @@
 #define ARMOR_SOLVER_SOLVER_HPP_
 
 // std
+#include <cstdint>
 #include <memory>
+#include <string>
 // ros2
 #include <angles/angles.h>
 #include <tf2_ros/buffer.h>
@@ -134,6 +136,9 @@ public:
 
     int get_top_level() const;
 
+    /** @brief 丢失目标时清除旋转模式及连续观测计数。 */
+    void reset_top_level() noexcept;
+
     /**
      * @brief 使用新收到的有效弹速更新滤波状态和弹道模型。
      * @param raw_bullet_speed 原始反馈弹速，单位米每秒，须为有限正数。
@@ -148,7 +153,17 @@ private:
     std::string gimble_frame_;
 
 private:
-    void update_top_level(const double angular_velocity);
+    /**
+     * @brief 用一张新图像的自转速度更新旋转目标模式。
+     * @param angular_velocity EKF 自转速度，单位弧度每秒。
+     * @param frame_stamp_ns 图像时间戳，单位纳秒；同帧重复解算不累计确认次数。
+     * @param target_id 当前跟踪的装甲板编号。
+     */
+    void update_top_level(
+        double angular_velocity,
+        std::int64_t frame_stamp_ns,
+        const std::string& target_id
+    );
 
     double get_ballistic_flying_time(const Eigen::Vector3d& target_pos);
     /**
@@ -238,6 +253,11 @@ private:
     Eigen::Vector3d gimbal_rpy_; // 当前云台姿态
 
     int top_level; // 运动状态
+    int top_activation_frames_ = 4;
+    int top_activation_count_ = 0;
+    int top_candidate_sign_ = 0;
+    std::int64_t last_top_frame_stamp_ns_ = 0;
+    std::string top_target_id_;
 
     double gravity = 9.8;
     double resistance = 0.001;

@@ -117,6 +117,9 @@ pixi shell
 手眼外参保存在 `launch_params.yaml`，其中 `rpy` 的顺序为 roll、pitch、yaw，单位为弧度。
 相机序列号、曝光和增益在 `config/node_params/camera_driver_params.yaml` 中设置；
 电控串口与波特率在 `config/node_params/serial_driver_params.yaml` 中设置。
+实体网口相机启动前，launch 会按 `launch_params.yaml` 中的 `camera_network` 配置，
+为 `enp3s0` 添加 `10.99.99.1/24`；容器须使用 host 网络并具备网卡配置权限。
+回放或视频输入模式不会配置网卡。
 
 容器内启动正式自瞄与 Foxglove Bridge：
 

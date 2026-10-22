@@ -32,6 +32,7 @@
       lost_time_thres: 0.3
           
     solver:
+      top_activation_frames: 4        # 连续 4 张新图像同向超过阈值才切换旋转瞄准模式
       yaw_filter_alpha: 0.25          # 每张新图像更新 25%；目标首次出现时直接使用原始角度
       yaw_filter_deadband_deg: 0.15   # 原始 yaw 与滤波值相差不超过此角度时保持指令
       yaw_filter_fire_tolerance_deg: 0.5 # 滤波尚未追上原始角度时暂停开火
@@ -72,6 +73,6 @@
       # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿值，yaw轴补偿值"]
       # 目标相对于odom
       angle_offset: [
-        "0.0 6.0 -1.0 1.0 0.0 0.0",
+        "0.0 6.0 -1.0 1.0 1.5 0.0",
 
       ]

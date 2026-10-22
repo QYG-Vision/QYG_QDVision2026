@@ -1,8 +1,10 @@
+#include "armor_solver/armor_measurement_gate.hpp"
 #include "armor_solver/armor_solver.hpp"
 #include "armor_solver/armor_yaw_solver.hpp"
 #include "armor_solver/yaw_command_filter.hpp"
 
 #include <cmath>
+#include <cstdint>
 #include <memory>
 
 #include <gtest/gtest.h>
@@ -10,6 +12,35 @@
 
 namespace qd::auto_aim {
 namespace {
+    TEST(ArmorMeasurementGateTest, RejectsOrientationFlipAtSamePositionButAllowsPlateSwitch) {
+        geometry_msgs::msg::Point previous_position;
+        previous_position.x = 1.0;
+        geometry_msgs::msg::Point same_position = previous_position;
+        same_position.y = 0.01;
+        constexpr std::int64_t kPreviousStampNs = 1000000000;
+        constexpr std::int64_t kNextStampNs = 1020000000;
+
+        EXPECT_TRUE(is_implausible_same_armor_orientation(
+            previous_position, 20.0 * M_PI / 180.0, kPreviousStampNs,
+            same_position, -49.0 * M_PI / 180.0, kNextStampNs
+        ));
+        EXPECT_FALSE(is_implausible_same_armor_orientation(
+            previous_position, 20.0 * M_PI / 180.0, kPreviousStampNs,
+            same_position, 9.0 * M_PI / 180.0, kNextStampNs
+        ));
+
+        geometry_msgs::msg::Point next_plate_position = previous_position;
+        next_plate_position.y = 0.3;
+        EXPECT_FALSE(is_implausible_same_armor_orientation(
+            previous_position, 20.0 * M_PI / 180.0, kPreviousStampNs,
+            next_plate_position, -70.0 * M_PI / 180.0, kNextStampNs
+        ));
+        EXPECT_FALSE(is_implausible_same_armor_orientation(
+            previous_position, 20.0 * M_PI / 180.0, kPreviousStampNs,
+            same_position, -49.0 * M_PI / 180.0, kPreviousStampNs + 200000000
+        ));
+    }
+
     TEST(YawCommandFilterTest, SmoothsCorrectionsOncePerImageAndKeepsSmallDeadband) {
         YawCommandFilter filter(0.25, 0.15);
         EXPECT_DOUBLE_EQ(filter.update(-14.0, 1, "3"), -14.0);
@@ -160,6 +191,50 @@ namespace {
         const auto moving = solver.solve(target, rclcpp::Time(10, 40000000, RCL_ROS_TIME), buffer_);
         EXPECT_GT(moving.yaw, expected_yaw + 1.0);
         EXPECT_LT(moving.yaw, expected_yaw + 10.0);
+    }
+
+    TEST_F(YawStabilityTest, RotatingModeRequiresDistinctConsistentImageFrames) {
+        Solver solver(node_);
+        node_->set_parameter(rclcpp::Parameter("solver.use_armor_top", true));
+        rm_interfaces::msg::Target target;
+        target.header.frame_id = "odom";
+        target.tracking = true;
+        target.id = "3";
+        target.armors_num = 4;
+        target.position.x = 2.26;
+        target.position_armor.x = 2.0;
+        target.radius_list = { 0.26, 0.26, 0.26, 0.26 };
+        target.dz_list = { 0.0, 0.0, 0.0, 0.0 };
+
+        auto solve_frame = [&](int frame, double v_yaw) {
+            const auto nanoseconds = static_cast<uint32_t>(frame * 20000000);
+            target.header.stamp = rclcpp::Time(10, nanoseconds);
+            target.v_yaw = v_yaw;
+            solver.solve(
+                target,
+                rclcpp::Time(10, nanoseconds + 40000000, RCL_ROS_TIME),
+                buffer_
+            );
+        };
+
+        solve_frame(0, 2.0);
+        for (int i = 0; i < 10; ++i) {
+            solve_frame(0, 2.0);
+        }
+        EXPECT_EQ(solver.get_top_level(), 0);
+
+        solve_frame(1, -2.0);
+        for (int frame = 2; frame <= 4; ++frame) {
+            solve_frame(frame, 2.0);
+            EXPECT_EQ(solver.get_top_level(), 0);
+        }
+        solve_frame(5, 2.0);
+        EXPECT_EQ(solver.get_top_level(), 1);
+
+        solver.reset_top_level();
+        EXPECT_EQ(solver.get_top_level(), 0);
+        solve_frame(6, 2.0);
+        EXPECT_EQ(solver.get_top_level(), 0);
     }
     TEST_F(YawStabilityTest, MotionPredictionCanBeDisabledAndRestoredWithoutChangingTarget) {
         Solver solver(node_);

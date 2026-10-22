@@ -186,6 +186,9 @@ void ArmorSolverNode::timerCallback() {
     if (!enable_ || !enable_ekf_) {
         std::lock_guard<std::mutex> lock(solver_state_mutex_);
         yaw_command_filter_.reset();
+        if (solver_) {
+            solver_->reset_top_level();
+        }
         return;
     }
 
@@ -210,6 +213,7 @@ void ArmorSolverNode::timerCallback() {
     // If target never detected
     if (armor_target_.header.frame_id.empty()) {
         yaw_command_filter_.reset();
+        solver_->reset_top_level();
         gimbal_pub_->publish(std::make_unique<rm_interfaces::msg::GimbalCmd>(std::move(control_msg))
         );
         return;
@@ -257,10 +261,12 @@ void ArmorSolverNode::timerCallback() {
 
         } catch (...) {
             yaw_command_filter_.reset();
+            solver_->reset_top_level();
             FYT_ERROR("armor_solver", "Something went wrong in solver!");
         }
     } else {
         yaw_command_filter_.reset();
+        solver_->reset_top_level();
     }
 
     publishMarkers(armor_target_, control_msg);
@@ -787,6 +793,11 @@ bool ArmorSolverNode::processArmors(
 
         // 更新模型
         tracker_->update(armors_msg);
+
+        // 本帧没有有效观测时，不让预测沿用的自转速度累计旋转模式确认次数。
+        if (tracker_->tracker_state == TrackerState::TEMP_LOST) {
+            solver_->reset_top_level();
+        }
 
         // 更新跟踪状态
         if (tracker_->tracker_state == TrackerState::DETECTING) {

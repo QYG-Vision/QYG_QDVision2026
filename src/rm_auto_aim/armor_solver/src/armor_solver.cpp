@@ -68,6 +68,9 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     activate_threshold[0] = 0.0;
     activate_threshold[1] = node->declare_parameter("solver.top1.activate_threshold", 90.0);
     activate_threshold[2] = node->declare_parameter("solver.top2.activate_threshold", 500.0);
+    top_activation_frames_ = static_cast<int>(std::clamp<std::int64_t>(
+        node->declare_parameter("solver.top_activation_frames", 4), 1, 16
+    ));
     for (auto& angle: activate_threshold)
         angle = angle * M_PI / 180.; // 转弧度制
     deactivate_threshold[0] = 0.0;
@@ -142,7 +145,11 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     }
 
     // 更新旋转状态
-    update_top_level(target.v_yaw);
+    update_top_level(
+        target.v_yaw,
+        rclcpp::Time(target.header.stamp).nanoseconds(),
+        target.id
+    );
     target.top_level = get_top_level();
 
     if (target.id == "outpost") {
@@ -207,11 +214,37 @@ std::vector<std::pair<double, double>> Solver::getTrajectory() const noexcept {
     return trajectory;
 }
 
-/**
-  @brief 更新目标旋转状态
-  @param angular_velocity [IN] 角速度
-*/
-void Solver::update_top_level(const double angular_velocity) {
+void Solver::reset_top_level() noexcept {
+    top_level = 0;
+    top_activation_count_ = 0;
+    top_candidate_sign_ = 0;
+    last_top_frame_stamp_ns_ = 0;
+    top_target_id_.clear();
+}
+
+void Solver::update_top_level(
+    double angular_velocity,
+    std::int64_t frame_stamp_ns,
+    const std::string& target_id
+) {
+    constexpr std::int64_t kMaximumFrameGapNs = 150000000;
+    if (target_id != top_target_id_
+        || (last_top_frame_stamp_ns_ > 0
+            && frame_stamp_ns - last_top_frame_stamp_ns_ > kMaximumFrameGapNs))
+    {
+        reset_top_level();
+    }
+    if (last_top_frame_stamp_ns_ > 0 && frame_stamp_ns <= last_top_frame_stamp_ns_) {
+        return;
+    }
+    last_top_frame_stamp_ns_ = frame_stamp_ns;
+    top_target_id_ = target_id;
+
+    if (!std::isfinite(angular_velocity)) {
+        reset_top_level();
+        return;
+    }
+
     const double credible_abs_w = std::abs(angular_velocity);
     // 最大 top 等级是 2 写死了
     // 是这样的
@@ -223,11 +256,25 @@ void Solver::update_top_level(const double angular_velocity) {
     const double deactivate_w =
         this->top_level == 0 ? 0.0 : deactivate_threshold[this->top_level];
 
-    // 自转速度为零时保持 top0，等级越界会导致后续参数数组访问越界。
-    if (this->top_level < 2 && credible_abs_w >= next_level_activate_w) {
-        this->top_level += 1;
-    } else if (this->top_level > 0 && credible_abs_w < deactivate_w) {
+    // 低于退出阈值时降级；进入高等级须由连续新图像确认。
+    if (this->top_level > 0 && credible_abs_w < deactivate_w) {
         this->top_level -= 1;
+        top_activation_count_ = 0;
+        top_candidate_sign_ = 0;
+        return;
+    }
+
+    if (this->top_level < 2 && credible_abs_w >= next_level_activate_w) {
+        const int sign = angular_velocity > 0.0 ? 1 : -1;
+        top_activation_count_ = sign == top_candidate_sign_ ? top_activation_count_ + 1 : 1;
+        top_candidate_sign_ = sign;
+        if (top_activation_count_ >= top_activation_frames_) {
+            this->top_level += 1;
+            top_activation_count_ = 0;
+        }
+    } else {
+        top_activation_count_ = 0;
+        top_candidate_sign_ = 0;
     }
 }
 
