@@ -4,12 +4,33 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <vector>
 
 #include <geometry_msgs/msg/point.hpp>
 
 #include "rm_utils/math/math.hpp"
 
 namespace qd::auto_aim {
+
+/**
+ * @brief 判断观测高度是否接近当前模型预测的任一装甲板高度。
+ * @param observed_z_m 装甲板在 odom 坐标系中的观测高度，单位米。
+ * @param predicted_z_m 各装甲板在 odom 坐标系中的预测高度，单位米。
+ * @param max_residual_m 允许的最大高度残差，单位米。
+ * @return 至少有一个板位的高度残差未超过阈值时返回 true。
+ */
+inline bool is_armor_height_consistent(
+    double observed_z_m,
+    const std::vector<double>& predicted_z_m,
+    double max_residual_m
+) {
+    if (!std::isfinite(observed_z_m) || max_residual_m < 0.0) {
+        return false;
+    }
+    return std::any_of(predicted_z_m.begin(), predicted_z_m.end(), [&](double predicted_z) {
+        return std::isfinite(predicted_z) && std::abs(observed_z_m - predicted_z) <= max_residual_m;
+    });
+}
 
 /**
  * @brief 判断同一位置附近的装甲板朝向是否发生不可信的单帧跳变。

@@ -6,12 +6,20 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include <rclcpp/rclcpp.hpp>
 
 namespace qd::auto_aim {
 namespace {
+    TEST(ArmorMeasurementGateTest, RejectsFloorReflectionAndKeepsStaggeredArmor) {
+        const std::vector<double> predicted_heights { -0.30, -0.52, -0.30, -0.52 };
+        EXPECT_TRUE(is_armor_height_consistent(-0.31, predicted_heights, 0.30));
+        EXPECT_TRUE(is_armor_height_consistent(-0.54, predicted_heights, 0.30));
+        EXPECT_FALSE(is_armor_height_consistent(-0.90, predicted_heights, 0.30));
+    }
+
     TEST(ArmorMeasurementGateTest, RejectsOrientationFlipAtSamePositionButAllowsPlateSwitch) {
         geometry_msgs::msg::Point previous_position;
         previous_position.x = 1.0;

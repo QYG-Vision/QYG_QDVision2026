@@ -17,6 +17,7 @@
 // limitations under the License.
 
 #include "armor_solver/armor_solver_node.hpp"
+#include "armor_solver/armor_measurement_gate.hpp"
 
 #include <cmath>
 
@@ -684,10 +685,32 @@ bool ArmorSolverNode::processArmors(
         armors_msg->armors.end()
     );
 
+    // 跟踪期间排除同号地面反光：它的高度远离所有预测板位，会把 EKF 整体拉低。
+    constexpr double kMaximumHeightResidualM = 0.30;
+    const rclcpp::Time time = armors_msg->header.stamp;
+    if (enable_ekf_ && tracker_->tracker_state != TrackerState::LOST && !tracker_->dz_list_.empty()
+        && (time - last_time_).seconds() > 0.0 && (time - last_time_).seconds() <= 0.15)
+    {
+        armors_msg->armors.erase(
+            std::remove_if(
+                armors_msg->armors.begin(),
+                armors_msg->armors.end(),
+                [this, kMaximumHeightResidualM](const rm_interfaces::msg::Armor& armor) {
+                    return armor.number == tracker_->tracked_id
+                        && !is_armor_height_consistent(
+                               armor.pose.position.z,
+                               tracker_->dz_list_,
+                               kMaximumHeightResidualM
+                        );
+                }
+            ),
+            armors_msg->armors.end()
+        );
+    }
+
     // Init message
     rm_interfaces::msg::Measurement measure_msg;
     rm_interfaces::msg::Target target_msg;
-    rclcpp::Time time = armors_msg->header.stamp;
     target_msg.header.stamp = time;
     target_msg.header.frame_id = target_frame_;
 
