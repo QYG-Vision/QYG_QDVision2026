@@ -87,7 +87,7 @@ public:
       serial_receive_data_msg.pitch = pitch;
       serial_receive_data_msg.yaw = yaw;
       tf2::Quaternion q;
-      q.setRPY(roll * M_PI / 180.0, -pitch * M_PI / 180.0, yaw * M_PI / 180.0);
+      q.setRPY(roll * M_PI / 180.0, pitch * M_PI / 180.0, yaw * M_PI / 180.0);
       transform_stamped_.transform.rotation = tf2::toMsg(q);
       transform_stamped_.header.frame_id = "odom";
       transform_stamped_.child_frame_id = "gimbal_link";

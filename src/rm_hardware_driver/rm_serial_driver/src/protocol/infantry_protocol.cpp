@@ -31,15 +31,7 @@ ProtocolInfantry::ProtocolInfantry(std::string_view port_name, int speed, bool e
 
 void ProtocolInfantry::send(const rm_interfaces::msg::GimbalCmd& data) {
     FixedPacket<16> packet;
-    SendPacket pkt;
-    // 填充数据并处理大小端转换
-    pkt.fire_advice = data.fire_advice ? FireState::Fire : FireState::NotFire;
-    pkt.yaw = swap_bytes(static_cast<int16_t>(data.yaw * 100));
-    pkt.pitch = swap_bytes(static_cast<int16_t>(data.pitch * 100));
-    pkt.distance = swap_bytes(static_cast<int16_t>(data.distance * 100));
-    pkt.id = armor_id_to_uint8(data.id);
-    pkt.target_v_yaw = swap_bytes(static_cast<int16_t>(data.target_v_yaw * 100));
-    
+    const SendPacket pkt = encodeGimbalCommand(data);
     packet.loadData<SendPacket>(pkt, 0);
 
     packet_tool_->sendPacket(packet);

@@ -16,7 +16,7 @@ foxglove_bridge: true
 use_state_machine_camera: true
 # true: 英雄解算 false: 传统解算
 hero_solver: false
-# true: 开启打符 false：关闭打符,会设置 serial_driver 协议为 hero
+# true: 开启打符 false：关闭打符,会设置 serial_driver 协议为 "hero"
 rune: false
 # true: 启动导航tf false：不启动导航tf
 navigation: false

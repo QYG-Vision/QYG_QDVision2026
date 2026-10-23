@@ -299,7 +299,7 @@ void RuneSolverNode::timerCallback() {
         aimming_line_marker_.points.emplace_back(aimming_line_start);
         aimming_line_end.y = 15 * sin(control_msg.yaw * M_PI / 180);
         aimming_line_end.x = 15 * cos(control_msg.yaw * M_PI / 180);
-        aimming_line_end.z = 15 * sin(control_msg.pitch * M_PI / 180);
+        aimming_line_end.z = -15 * sin(control_msg.pitch * M_PI / 180);
         aimming_line_marker_.points.emplace_back(aimming_line_end);
         marker_array.markers.push_back(aimming_line_marker_);
 

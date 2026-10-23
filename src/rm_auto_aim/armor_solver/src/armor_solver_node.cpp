@@ -868,7 +868,7 @@ void ArmorSolverNode::publishMarkers(
         selection_marker_.pose.position.y = gimbal_cmd.distance * sin(gimbal_cmd.yaw * M_PI / 180);
         selection_marker_.pose.position.x = gimbal_cmd.distance * cos(gimbal_cmd.yaw * M_PI / 180);
         selection_marker_.pose.position.z =
-            gimbal_cmd.distance * sin(gimbal_cmd.pitch * M_PI / 180);
+            -gimbal_cmd.distance * sin(gimbal_cmd.pitch * M_PI / 180);
 
         // 预测弹道位置
         trajectory_marker_.action = visualization_msgs::msg::Marker::ADD;

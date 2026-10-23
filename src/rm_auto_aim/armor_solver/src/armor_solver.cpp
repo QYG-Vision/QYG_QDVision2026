@@ -164,18 +164,18 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     gimbal_cmd.yaw =
         reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * additional_prediction_time)) * 180 / M_PI;
     gimbal_cmd.pitch =
-        (send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time)) * 180 / M_PI;
+        -(send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time)) * 180 / M_PI;
     gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
-    gimbal_cmd.pitch_diff = reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
+    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
     gimbal_cmd.distance = send_ypd.distance;
     gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
                              && target_aim.shoot == ShootMode::SHOOT_NOW;
     // 以下信息主要用于调试和可视化
     gimbal_cmd.bullet_speed = get_bullet_speed();
     gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.exp_pitch = send_ypd.pitch * 180 / M_PI;
+    gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
     gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
-    gimbal_cmd.pitch_vel = send_ypd_v.pitch * 180 / M_PI;
+    gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
     gimbal_cmd.target_v_yaw = target_aim.state(7);
 
     return gimbal_cmd;

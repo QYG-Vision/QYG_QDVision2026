@@ -258,7 +258,7 @@ private:
         t_gimbal.child_frame_id = "gimbal_link";
 
         tf2::Quaternion q;
-        q.setRPY(sr.roll * M_PI / 180.0, -sr.pitch * M_PI / 180.0, sr.yaw * M_PI / 180.0);
+        q.setRPY(sr.roll * M_PI / 180.0, sr.pitch * M_PI / 180.0, sr.yaw * M_PI / 180.0);
         t_gimbal.transform.rotation = tf2::toMsg(q);
         tf_broadcaster_->sendTransform(t_gimbal);
 
