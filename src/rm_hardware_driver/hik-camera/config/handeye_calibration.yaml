@@ -1,0 +1,21 @@
+format_version: 2
+source_frame: camera_optical_frame
+target_frame: gimbal_link  # p_gimbal = R_camera2gimbal * p_camera_optical + t_camera2gimbal; points in m
+R_camera2gimbal: [-0.0094109605077376413, -0.028102556608822393, 0.99956074359408964, -0.99995130842696534, -0.0027034149200472284, -0.0094906439702546388, 0.0029689387871540225, -0.99960138948473731, -0.028075746520086275]
+t_camera2gimbal: [0.10667282609666746, -0.0018209459240552716, 0.084452178368358832]
+t_camera2gimbal_unit: m
+gimbal2camera:
+  parent_frame: gimbal_link
+  child_frame: camera_link
+  xyz_unit: m
+  rpy_unit: rad
+  rpy_order: roll pitch yaw  # Copy xyz/rpy to QD launch_params.yaml; embedded quotes are intentional
+  xyz: "\"0.10667282609666746 -0.0018209459240552716 0.084452178368358832\""
+  rpy: "\"-0.0029701139755703453 0.028079436268732525 -0.009494529319893261\""
+# Board horizontal distance: 1.194659 m
+# Board YPR (FLU): 87.961769 10.561128 -0.301382 degree
+# Sample count: 50
+# Gimbal rotation range (degree):
+#   roll: [0.130000, 0.510000]
+#   pitch: [-15.740000, 6.540000]
+#   yaw: [70.820000, 102.639999]
