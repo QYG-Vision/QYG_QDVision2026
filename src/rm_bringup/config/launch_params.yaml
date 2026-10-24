@@ -1,7 +1,7 @@
 gimbal2camera:
   # 手眼标定结果：gimbal_link → camera_link；xyz 单位 m，rpy 为 roll pitch yaw（rad）。
-  xyz: "\"0.10686252867615145 -0.0054249418203323099 0.082771582867510934\""
-  rpy: "\"-0.014422670598268324 0.026202192684018476 -0.016800692390000375\""
+  xyz: "\"0.10810287376712137 -0.0056464694322364804 0.081340712000726637\""
+  rpy: "\"-0.013695797747005701 0.024681262744237254 -0.016542327522579336\""
 
 #第二个头的gimbal2camera
   xyz_: "\"0 0 0\""
@@ -13,7 +13,7 @@ namespace: ""
 foxglove_bridge: true
 # 图像获取方式
 # true: 状态机线程模式(image_callback) false: 话题订阅模式(imageCallback)
-use_state_machine_camera: true
+use_state_machine_camera: false
 # true: 英雄解算 false: 传统解算
 hero_solver: false
 # true: 开启打符 false：关闭打符,会设置 serial_driver 协议为 "hero"
