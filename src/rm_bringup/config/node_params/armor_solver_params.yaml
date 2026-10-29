@@ -31,7 +31,7 @@
     solver:
       use_armor_top: true            # 是否使用平移运动模型(armor_model),仅在 top0 时使用
       use_ballistic_compensation: true # 只切换发射 pitch；关闭时用几何角，飞行时间预测不变
-      predict2send_delay: 0.0         # 从预测到串口发送的延迟
+      predict2send_delay: 0.11         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
       additional_prediction_time: 0.00 # 根据角速度，给电控指令的额外预测时间
       shooting_range_width: 0.135     # 开火宽度范围
