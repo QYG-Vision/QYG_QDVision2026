@@ -18,6 +18,7 @@ public:
         last_mcu_time_ = 0.0;
         last_pc_time_ = 0.0;
         last_sync_time_ = 0.0;
+        expected_pc_time_ = 0.0;
         
         last_raw_mcu_time_ = 0;
         raw_mcu_time_accumulator_ = 0;
@@ -36,14 +37,11 @@ public:
             raw_mcu_time_accumulator_ = raw_mcu_timestamp;
             last_raw_mcu_time_ = raw_mcu_timestamp;
         } else {
-            int32_t diff = static_cast<int32_t>(raw_mcu_timestamp - last_raw_mcu_time_);
-            // 判断是否是一个新的更大的时间或处理了正常溢出；丢弃过旧的严重乱序包
-            if (diff > 0 || diff < -10000) { 
-                raw_mcu_time_accumulator_ += diff;
-                last_raw_mcu_time_ = raw_mcu_timestamp;
-            } else {
-                // 如果是轻微的时间乱序跳变（如相同时间戳或几毫秒内的旧包），不累加时间累主计数器
-            }
+            const uint32_t elapsed = raw_mcu_timestamp - last_raw_mcu_time_;
+            // 重复快照和逆序帧保持原参考时间；无符号差自然处理 uint32 回绕。
+            if (elapsed == 0 || elapsed >= 0x80000000U) return expected_pc_time_;
+            raw_mcu_time_accumulator_ += elapsed;
+            last_raw_mcu_time_ = raw_mcu_timestamp;
         }
 
         // 2. 将离散的 MCU 时间重构为连续递增的绝对时间 (秒)
@@ -55,6 +53,7 @@ public:
             last_mcu_time_ = current_mcu_time;
             last_pc_time_ = current_pc_time_sec;
             last_sync_time_ = current_pc_time_sec;
+            expected_pc_time_ = current_pc_time_sec;
             is_initialized_ = true;
             return current_pc_time_sec;
         }

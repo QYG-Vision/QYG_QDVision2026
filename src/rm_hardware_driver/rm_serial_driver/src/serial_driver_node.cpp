@@ -111,35 +111,13 @@ void SerialDriverNode::listenLoop() {
             // 获取当前 PC 时间和 MCU 时间（转换为秒）
             rclcpp::Time pc_now = this->now();
             rclcpp::Time real_gimbal_time = pc_now; // 默认使用 PC 时间，后续会通过 PLL 同步调整
-            /*             double mcu_time_sec = receive_data.mcu_timestamp / 1000.0; // 假设下位机发来的是毫秒
-
-            // 计算当前包的时间偏移量 (Offset)
-            double current_offset = pc_now.seconds() - mcu_time_sec;
-
-            // 滑动窗口寻找最小偏移量（过滤掉 USB 延迟峰值）
-            offset_window_.push_back(current_offset);
-            if (offset_window_.size() > 100) { // 维持约 1 秒的窗口 (假设 100Hz)
-                offset_window_.pop_front();
-            }
-            double min_offset = *std::min_element(offset_window_.begin(), offset_window_.end());
-
-            // 计算无抖动的真实云台采样时间
-            rclcpp::Time real_gimbal_time(( mcu_time_sec + min_offset) * 1e9, pc_now.get_clock_type()); // 转换为纳秒构造 rclcpp::Time
- */
-            // 扔进 PLL 滤波器，获得剃除了所有调度毛刺的完美绝对时间
-            if (receive_data.mcu_timestamp > 0) {
-                double sync_time_sec =
-                    time_sync_.sync(receive_data.mcu_timestamp, pc_now.seconds(), false);
-
-                // 将 double 秒级时间无损转换为 rclcpp::Time (通过纳秒构造)
-                real_gimbal_time = rclcpp::Time(
-                    static_cast<int64_t>(sync_time_sec * 1e9),
-                    pc_now.get_clock_type()
-                );
-
-                timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
-                real_gimbal_time += rclcpp::Duration::from_seconds(timestamp_offset_);
-            }
+            // V2 的 0 也可能是 MCU 时钟回绕后的合法采样时刻，统一进行时钟映射。
+            const double sync_time_sec =
+                time_sync_.sync(receive_data.mcu_timestamp, pc_now.seconds(), false);
+            real_gimbal_time = rclcpp::Time(
+                static_cast<int64_t>(sync_time_sec * 1e9), pc_now.get_clock_type());
+            timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
+            real_gimbal_time += rclcpp::Duration::from_seconds(timestamp_offset_);
 
             FYT_DEBUG(
                 "serial_driver",

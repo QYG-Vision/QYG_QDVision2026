@@ -12,3 +12,10 @@ float64 bullet_speed    # 实际使用的电控弹速，单位 m/s；未收到�
 float64 yaw_vel     # 超调量的 yaw 角速度
 float64 pitch_vel   # 超调量的 pitch 角速度，向下为正
 float64 target_v_yaw # EKF 状态量 v_yaw，目标自转角速度，单位弧度每秒
+
+# V2 完整规划参考；当前求解器未接入 MPC，必须为 false。
+bool reference_valid
+float32 yaw_vel_deg_s # degree/s，与最终 yaw 同方向、同一规划时刻
+float32 pitch_vel_deg_s # degree/s，向下为正，包含弹道补偿
+float32 yaw_acc_deg_s2 # degree/s²
+float32 pitch_acc_deg_s2 # degree/s²，向下为正

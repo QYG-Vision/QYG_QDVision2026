@@ -1,77 +1,93 @@
-# 视觉与电控串口通信协议
+# QD26 视觉串口 V2 协议
 
-本文按代码现状整理，供视觉和电控联调使用。主分支 `main` 对应英雄、步兵等非哨兵兵种；`Qlf-Sentry` 分支的默认配置对应 QYG 哨兵。本文只描述 UART 上的字节，不把 ROS 消息字段误当作线协议字段。
+本仓库已接入 V2 通信接口，当前未接入 MPC 规划器。装甲板及能量机关求解器均保持
+`reference_valid=false`，线上发送 `target_state=0`，不能用于正常自瞄控制。
+电控及底盘是否支持 V2，须在对应工程独立确认；本次不修改电控。
 
-核对版本：`main` 为 `de135a66f8aa820e7935f2898b614e819223fc07`，`Qlf-Sentry` 为 `4a5e3479db6e7911b25e67e22c44354f11b48c2b`。以后修改协议时，双方应同时更新此文档和对应的编解码代码。
+## 串口与编码
 
-## 先确认使用哪套帧
+- 默认 `/dev/ttyUSB0`，921600 bit/s，8N1，无流控。
+- `infantry`、`hero`、`air`、`sentry` 共用 V2 编解码；保留各配置的订阅和模式服务。
+- 视觉发送 32 字节，接收 24 字节，帧头 `0xFE`，最后一字节 `0x0D`。
+- 所有多字节整数和 float32 位模式均为大端；逐字段编解码，不发送结构体内存。
+- 定点字段先限幅到 int16 范围，再截断小数。负数采用补码。
+- 新增 float32 直接表示 °/s 或 °/s²，不乘 100。`1.0` 为 `3F 80 00 00`，`-1.0` 为 `BF 80 00 00`。
+- 预留校验字节发送 0，无 CRC；不能保证载荷完整性。接收端忽略预留校验字节的值。
+- 只接收 V2，不协商版本、不回退 V1。固定长度解析，载荷中的帧头/帧尾不作分隔符。
 
-| 兵种/配置 | 协议名 | 视觉→电控 | 电控→视觉 | 默认 UART |
-| --- | --- | ---: | ---: | --- |
-| `main` 的 `hero`、`air`、`infantry` | QD 定长协议 | 16 字节 | 16 字节 | 115200，8N1，无流控 |
-| `Qlf-Sentry` 默认的 `qyg_sentry` | QYG 哨兵协议 | 34 字节 | 39 字节 | 921600，8N1，无流控 |
+## 视觉 → 电控：32 字节
 
-两套协议的帧头、长度、编码、校验均不同，**不可混用**。两个分支的默认设备路径均为 `/dev/rm_usb0`，实际设备名由部署环境决定。`main` 还保留名为 `sentry` 的旧 16 字节实现；它不是本文所说的 `Qlf-Sentry` 默认协议。`main` 的英雄、空中机器人共用 `DefaultProtocol`，步兵使用 `ProtocolInfantry`；三者的串口字节布局相同。
+| 偏移 | 字段 | 线类型 | 单位或约定 |
+| --- | --- | --- | --- |
+| 0 | header_pad | uint8 | `0xFE` |
+| 1 | fire_advice | uint8 | 0/1，只是建议 |
+| 2–3 | yaw | int16 | 规划绝对角，degree ×100 |
+| 4–5 | pitch | int16 | 规划绝对角，degree ×100，向下为正 |
+| 6–7 | distance | int16 | m ×100；无目标为 −100，即 −1 m |
+| 8 | id | uint8 | 0～9 |
+| 9–10 | target_v_yaw | int16 | 敌方自转速度，rad/s ×100 |
+| 11 | target_state | uint8 | 0 无有效目标/规划；1 完整有效参考 |
+| 12–13 | reserved4/reserved5 | uint8[2] | 0 |
+| 14–17 | yaw_vel_deg_s | float32 | °/s |
+| 18–21 | pitch_vel_deg_s | float32 | °/s，向下为正 |
+| 22–25 | yaw_acc_deg_s2 | float32 | °/s² |
+| 26–29 | pitch_acc_deg_s2 | float32 | °/s²，向下为正 |
+| 30 | check_byte | uint8 | 0，无 CRC |
+| 31 | tail_byte | uint8 | `0x0D` |
 
-本协议中的偏移从 0 开始。`pitch` 在电控回传及视觉下发中均以**抬头为正**。视觉后续构造 TF 时进行的符号转换不是串口协议的一部分。
+目标编号：0 未知，1～5 对应编号，6 前哨站，7 哨兵，8 基地，9 negative；未知字符串回退为 0。
 
-### 共用的枚举
+`GimbalCmd.reference_valid` 是完整规划就绪标志，默认 false。仅装甲板模式、标志为 true、
+距离为正且定点编码后仍大于 0、角度/自转速度及四个导数有限且可表示时，发送有效目标。
+能量机关订阅入口强制清除该标志；收到反馈模式 2～5 时，串口层也禁止有效参考。
 
-电控发送的视觉模式编号在两套协议中均为以下含义：
+无效参考统一发送 `target_state=0`、`fire_advice=0`、距离 −100、其余运动字段归零。
+不能用现有 `yaw_vel/pitch_vel` 调试量代替 V2 规划导数，也不能用补零冒充规划完成。
+有效参考中各轴 p/v/a 必须同一规划时刻、坐标系和正方向，Pitch 导数须包含弹道补偿。
+后续规划器仍使用 `GimbalCmd.yaw/pitch` 承载规划后的角度，新增四个具名字段承载导数。
 
-| 数值 | 视觉模式 |
-| ---: | --- |
-| 0 | `AUTO_AIM_RED`，自瞄红色目标 |
-| 1 | `AUTO_AIM_BLUE`，自瞄蓝色目标 |
-| 2 | `SMALL_RUNE_RED`，小符红色目标 |
-| 3 | `SMALL_RUNE_BLUE`，小符蓝色目标 |
-| 4 | `BIG_RUNE_RED`，大符红色目标 |
-| 5 | `BIG_RUNE_BLUE`，大符蓝色目标 |
+## 电控 → 视觉：24 字节
 
-视觉下发的 `target_id`：`0` 表示无目标或未知；`1`～`5` 对应 1～5 号装甲板；`6` 前哨站；`7` 哨兵；`8` 基地；`9` 负样本。未知字符串也会编码成 `0`。**模式编号和目标编号是两种独立的字段。**
+| 偏移 | 字段 | 线类型 | 单位或约定 |
+| --- | --- | --- | --- |
+| 0 | header | uint8 | `0xFE` |
+| 1 | mode | uint8 | 0～5 |
+| 2–3 | roll | int16 | degree ×100 |
+| 4–5 | pitch | int16 | degree ×100，向下为正 |
+| 6–7 | yaw | int16 | degree ×100 |
+| 8–9 | bullet_speed | int16 | m/s ×100 |
+| 10–13 | mcu_timestamp | uint32 | 姿态/角速度共同参考时刻，MCU ms |
+| 14–17 | yaw_actual_vel_deg_s | float32 | °/s，有符号 |
+| 18–21 | pitch_actual_vel_deg_s | float32 | °/s，向下为正 |
+| 22 | check_byte | uint8 | 预留，电控应发送 0 |
+| 23 | tail_byte | uint8 | `0x0D` |
 
-## 一、`main`：QD 16 字节定长协议
+模式：0/1 装甲板红/蓝，2/3 小能量机关红/蓝，4/5 大能量机关红/蓝；0 不是关闭视觉。
+接收端验证帧头尾、模式范围及实际角速度有限性，失败不修改输出快照或当前模式。
+实际角速度直接发布到 `/serial/receive`，不从姿态差分生成，不把机体系 gyro 直接当姿态角速度。
 
-帧头固定 `FF`，帧尾固定 `0D`。所有 `int16` 和 `uint32` 字段在线路上按**大端序**排列；`int16` 为有符号二进制补码。角度、距离、弹速和自转角速度采用“实际值 × 100 后转换成整数”的定点编码，解码时除以 100。视觉当前使用 C++ `static_cast<int16_t>`，即小数部分截断；代码没有做范围饱和处理，电控不能假设越界值会自动限幅。
+MCU 时间戳原值保留在消息中，通过时钟映射生成 `header.stamp`，支持 uint32 回绕；
+V2 中 0 也作为合法采样 tick 处理，不能用 0 表示缺失时间戳。
+重复及逆序时间戳不推进映射时间。重复快照必须携带原采样时间，不得以发送时间给旧数据续期。
+MCU 重启或超过半个 uint32 周期的中断须重新初始化时钟映射（重启视觉串口节点）；
+当前不自动区分复位与旧帧。
 
-### 视觉→电控：16 字节
+## 接入与验证
 
-| 偏移 | 长度 | 字段 | 线类型 | 单位及含义 |
-| ---: | ---: | --- | --- | --- |
-| 0 | 1 | `header` | `uint8` | 固定 `0xFF` |
-| 1 | 1 | `fire_advice` | `uint8` | `0` 不建议开火，`1` 建议开火 |
-| 2 | 2 | `yaw` | 大端 `int16` | 目标云台 yaw，度 × 100 |
-| 4 | 2 | `pitch` | 大端 `int16` | 目标云台 pitch，度 × 100，抬头为正 |
-| 6 | 2 | `distance` | 大端 `int16` | 目标距离，米 × 100；负值表示无有效目标 |
-| 8 | 1 | `target_id` | `uint8` | 目标编号，见共用枚举 |
-| 9 | 2 | `target_v_yaw` | 大端 `int16` | 目标自转角速度，rad/s × 100 |
-| 11 | 3 | `reserved` | `uint8[3]` | 当前发送代码未赋值，字节值不可靠；电控须忽略 |
-| 14 | 1 | `check_byte` | `uint8` | 当前发送代码未赋值，**不是有效校验值** |
-| 15 | 1 | `tail` | `uint8` | 固定 `0x0D` |
+串口发布 `serial/receive` 和云台 TF；`timestamp_offset` 继续作用于映射后的采样时刻。
+虚拟串口每周期生成新的静止模拟快照，两轴实际角速度明确为 0，不代表硬件测量。
+ROS 消息新增字段后，需要重新构建 `rm_interfaces` 和所有依赖节点；旧录包不自动迁移。
 
-例如下发 `pitch=+10.00°` 时，偏移 4～5 为 `03 E8`。`distance=-1.00 m` 会编码为有符号 `-100`，即 `FF 9C`。当前下发逻辑直接传输求解器给出的 `fire_advice`，没有在线协议层再用 `distance` 强制关闭开火；电控应同时检查有效目标条件。
+恢复有效自瞄需要：装甲板规划器输出一致的 p/v/a 并设置 `reference_valid=true`，
+电控和底盘实现 V2 收发、统一采样时刻、两轴实际角速度及失效后撤销前馈。
+本次没有新增 MPC，没有部署或硬件联调。
 
-### 电控→视觉：16 字节
+回归测试覆盖独立字节样例、定点限幅、float32 位模式、无效参考、非法反馈、半帧、粘包、
+载荷内帧头帧尾、坏帧重同步、V1 拒绝、收发不同长度以及重复/回绕时间戳。
 
-| 偏移 | 长度 | 字段 | 线类型 | 单位及含义 |
-| ---: | ---: | --- | --- | --- |
-| 0 | 1 | `header` | `uint8` | 固定 `0xFF` |
-| 1 | 1 | `mode` | `uint8` | 视觉模式 0～5，见共用枚举 |
-| 2 | 2 | `roll` | 大端 `int16` | 云台 roll，度 × 100 |
-| 4 | 2 | `pitch` | 大端 `int16` | 云台 pitch，度 × 100，抬头为正 |
-| 6 | 2 | `yaw` | 大端 `int16` | 云台 yaw，度 × 100 |
-| 8 | 2 | `bullet_speed` | 大端 `int16` | 电控提供的弹速，m/s × 100 |
-| 10 | 4 | `mcu_timestamp` | 大端 `uint32` | 云台角采样时刻，毫秒 |
-| 14 | 1 | `check_byte` | `uint8` | 接收代码目前不检查 |
-| 15 | 1 | `tail` | `uint8` | 固定 `0x0D` |
+## 历史分支参考（不属于当前 V2 实现）
 
-例如电控上报 `pitch=+10.00°`，偏移 4～5 应为 `03 E8`；视觉解包后保持 `+10.00°`。电控应发送已经在电控侧处理好的正弹速，视觉不再用固定弹速覆盖它。`mcu_timestamp` 应取与本帧云台角对应的采样时刻，而非发送完成时刻。
-
-### 帧检查和发送时机
-
-视觉接收端目前只检查**长度、帧头和帧尾**，断帧时尝试拼帧；它**不校验**偏移 14 的字节，也不验证 `mode` 是否属于 0～5。电控发来的错误但具有正确帧头/帧尾的 16 字节数据可能被当成有效帧。双方不能把 `check_byte` 当成已启用的 CRC、BCC 或异或校验。为兼容现有代码，电控接收时须忽略视觉下发的保留字节和 `check_byte`。
-
-视觉在收到云台求解指令时发送一帧；协议本身没有序号、确认帧、重传或固定发送频率。`hero`、`air` 订阅自瞄指令，`infantry` 同时订阅自瞄和能量机关指令。
+以下仅保留旧文档对 `Qlf-Sentry` 分支的描述，未在本次核实或修改，不用于当前串口配置。
 
 ## 二、`Qlf-Sentry`：QYG 哨兵协议
 
@@ -126,15 +142,3 @@
 
 视觉接收端校验帧头和 CRC；串流中有噪声、分片、粘包或错误 CRC 时，会重新搜索下一处 `GD`。协议没有序号、确认帧或重传字段。电控发送端须以对应长度和 CRC 输出完整帧。
 
-## 联调核对项
-
-1. 双方先确认协议名、波特率、8N1、无流控；抓包时检查帧头和总长度，不能用 16 字节解析 39/34 字节帧。
-2. 用电控 `pitch=+10°`、正弹速样例检查：QD 回传 pitch 字节 `03 E8`；QYG 哨兵回传 pitch 字节 `00 00 20 41`。视觉看到的 pitch 应仍为 `+10°`。
-3. 用模式 `0`～`5` 和各目标编号核对枚举；QYG 哨兵额外验证非法 `current_mode` 时的回退行为，以及 `sentry_state` 的原值传输。
-4. 用“有目标/无目标 × 建议开火/不建议开火”检查发射控制。哨兵尤其要确认 `mode=0` 时云台不动作，底盘指令仍按独立字段处理。
-5. QYG 哨兵用 `123456789 → 0x6F91` 核对 CRC 算法，再核对整帧 CRC 的覆盖范围。QD 16 字节协议目前**没有可用的校验字节**，联调不能把偏移 14 当作校验结果。
-
-## 对应源码
-
-- `main`：[帧结构与目标编号](https://github.com/QYG-Vision/QYG_QDVision2026/blob/de135a66f8aa820e7935f2898b614e819223fc07/src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/protocol.hpp)、[16 字节收帧检查](https://github.com/QYG-Vision/QYG_QDVision2026/blob/de135a66f8aa820e7935f2898b614e819223fc07/src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/fixed_packet_tool.hpp)、[英雄编解码](https://github.com/QYG-Vision/QYG_QDVision2026/blob/de135a66f8aa820e7935f2898b614e819223fc07/src/rm_hardware_driver/rm_serial_driver/src/protocol/default_protocol.cpp)、[步兵编解码](https://github.com/QYG-Vision/QYG_QDVision2026/blob/de135a66f8aa820e7935f2898b614e819223fc07/src/rm_hardware_driver/rm_serial_driver/src/protocol/infantry_protocol.cpp)。
-- `Qlf-Sentry`：[QYG 帧结构](https://github.com/QYG-Vision/QYG_QDVision2026/blob/4a5e3479db6e7911b25e67e22c44354f11b48c2b/src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/protocol/qyg_protocol.hpp)、[CRC 与编解码](https://github.com/QYG-Vision/QYG_QDVision2026/blob/4a5e3479db6e7911b25e67e22c44354f11b48c2b/src/rm_hardware_driver/rm_serial_driver/src/protocol/qyg_protocol.cpp)、[串口收发](https://github.com/QYG-Vision/QYG_QDVision2026/blob/4a5e3479db6e7911b25e67e22c44354f11b48c2b/src/rm_hardware_driver/rm_serial_driver/src/protocol/qyg_sentry_protocol.cpp)、[帧和 CRC 测试](https://github.com/QYG-Vision/QYG_QDVision2026/blob/4a5e3479db6e7911b25e67e22c44354f11b48c2b/src/rm_hardware_driver/rm_serial_driver/test/test_qyg_protocol.cpp)。

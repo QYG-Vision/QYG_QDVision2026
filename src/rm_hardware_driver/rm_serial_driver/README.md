@@ -2,15 +2,19 @@
 
 FYT视觉24赛季串口通信模块
 
-## QD26 步兵协议
+## QD26 V2 协议
 
-视觉到电控使用 16 字节定长帧，921600 bit/s，大端编码，帧头 `0xFF`，帧尾 `0x0D`。
-pitch 与电控角度同号，向下为正。偏移 11 为 `target_state`：目标距离大于 0 时发送 1，
-无目标时发送 0；电控仅在该字段为 1 且距离有效时更新瞄准角。偏移 12-13 保留，
-偏移 14 校验字节当前发送 0。
+UART 默认 921600 bit/s，8N1；视觉发送 32 字节，接收 24 字节，帧头 `0xFE`，帧尾 `0x0D`。
+所有多字节字段显式大端编解码。新增四个规划导数、两个实际角速度使用 float32，
+分别直接表示 °/s、°/s²；Pitch 向下为正。`target_v_yaw` 仍是 rad/s ×100。
 
-定点角度按 degree * 100 编码，距离按 m * 100 编码，自转角速度按 rad/s * 100 编码，
-超出 `int16` 范围的值会限幅。
+当前未接入 MPC，求解器明确保持 `reference_valid=false`，仅发送无效参考帧：
+`target_state=0`、开火建议 0、距离 −1 m、角度与运动字段为 0。
+能量机关入口和模式 2～5 均禁止有效参考。V1 不兼容，不进行协商或回退。
+
+反馈通过 `serial/receive` 发布实际角速度；非法模式及 NaN/Inf 整帧拒绝。
+MCU 毫秒时间戳映射支持回绕，0 也是合法 tick，重复快照保持原时间。
+完整协议见 [SERIAL_PROTOCOL.md](../../../SERIAL_PROTOCOL.md)。
 
 ## qd::SerialDriverNode
 
@@ -23,8 +27,8 @@ pitch 与电控角度同号，向下为正。偏移 11 为 `target_state`：目�
   
 ### Subscribed Topics
 
-* `cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 云台控制信息
-* `cmd_chassis` (`rm_interfaces/msg/ChassisCmd`) - 底盘控制信息
+* `armor_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 装甲板参考
+* `rune_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 步兵/哨兵入口只发送无效参考
 
 ### 参数
 

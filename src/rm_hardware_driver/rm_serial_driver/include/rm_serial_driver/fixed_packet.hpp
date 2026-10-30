@@ -20,20 +20,21 @@
 #define SERIAL_DRIVER_FIXED_PACKET_HPP_
 
 // std
+#include <cstdint>
 #include <cstring>
 #include <memory>
 
 namespace qd::serial_driver {
 
 // 定长数据包封装
-// [head_byte(0xff),...(data_bytes)...,check_byte,tail_byte(0x0d)]
+// [head_byte(0xfe),...(data_bytes)...,check_byte,tail_byte(0x0d)]
 template <int capacity = 16>
 class FixedPacket {
  public:
   using SharedPtr = std::shared_ptr<FixedPacket>;
   FixedPacket() {
     memset(buffer_, 0, capacity);
-    buffer_[0] = 0xff;             // 帧头
+    buffer_[0] = 0xfe;             // 帧头
     buffer_[capacity - 1] = 0x0d;  // 帧尾
   }
 
@@ -77,6 +78,7 @@ class FixedPacket {
 };
 
 using FixedPacket16 = FixedPacket<16>;
+using FixedPacket24 = FixedPacket<24>;
 using FixedPacket32 = FixedPacket<32>;
 using FixedPacket64 = FixedPacket<64>;
 
