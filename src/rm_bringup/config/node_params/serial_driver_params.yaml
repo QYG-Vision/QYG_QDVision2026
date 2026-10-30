@@ -4,7 +4,7 @@
     child_frame_id: gimbal_link
     timestamp_offset: 0.000
     port_name: "/dev/ttyUSB0"  # 串口设备名
-    baud_rate: 921600  # 16 字节定长协议默认波特率；错误波特率会导致长时间 broken frame 噪声
+    baud_rate: 921600  # V2：发送32/接收24字节，0xFE帧头；默认波特率；错误波特率会导致长时间 broken frame 噪声
     protocol: "infantry"  # ProtocolInfantry: infantry, DefaultProtocol: hero air, ProtocolSentry: sentry
     enable_data_print: false # 改为true将会打印从串口读出来的16进制数据
 

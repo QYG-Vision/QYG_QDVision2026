@@ -86,6 +86,9 @@ public:
       serial_receive_data_msg.roll = roll;
       serial_receive_data_msg.pitch = pitch;
       serial_receive_data_msg.yaw = yaw;
+      // 虚拟串口每周期生成静止姿态快照，不代表硬件测速。
+      serial_receive_data_msg.yaw_actual_vel_deg_s = 0.0f;
+      serial_receive_data_msg.pitch_actual_vel_deg_s = 0.0f;
       tf2::Quaternion q;
       q.setRPY(roll * M_PI / 180.0, pitch * M_PI / 180.0, yaw * M_PI / 180.0);
       transform_stamped_.transform.rotation = tf2::toMsg(q);

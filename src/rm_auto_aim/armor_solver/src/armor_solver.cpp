@@ -157,6 +157,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
 
     // Initialize gimbal_cmd
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
+    gimbal_cmd.reference_valid = false; // 尚未接入完整 MPC 规划参考
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
     auto send_ypd = target_aim.aim_ypd;

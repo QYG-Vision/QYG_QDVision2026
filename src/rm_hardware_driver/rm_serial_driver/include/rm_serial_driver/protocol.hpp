@@ -18,6 +18,7 @@
 
 // std
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -37,6 +38,7 @@
 #include "rm_interfaces/srv/set_mode.hpp"
 #include "rm_utils/logger/log.hpp"
 #include "rm_serial_driver/fixed_packet.hpp"
+#include "rm_serial_driver/v2_codec.hpp"
 #include "rm_serial_driver/fixed_packet_tool.hpp"
 #include "rm_serial_driver/uart_transporter.hpp"
 
@@ -75,39 +77,8 @@ public:
             | ((val >> 24) & 0x000000FF);
     }
 
-// 确保结构体按1字节对齐，禁止编译器填充
-#pragma pack(push, 1)
-    struct SendPacket {
-        int8_t header_pad = 0xff;       // 偏移 0：帧头
-        int8_t fire_advice = 0;         // 偏移 1：开火建议
-        int16_t yaw = 0;                // 偏移 2-3：目标 yaw，degree * 100
-        int16_t pitch = 0;              // 偏移 4-5：目标 pitch，degree * 100
-        int16_t distance = 0;           // 偏移 6-7：目标距离，m * 100
-        uint8_t id = 0;                 // 偏移 8：目标类型
-        int16_t target_v_yaw = 0;       // 偏移 9-10：目标自转角速度，rad/s * 100
-        uint8_t target_state = 0;       // 偏移 11：0 无目标，1 跟踪中
-        uint8_t reserved4 = 0;          // 偏移 12：保留
-        uint8_t reserved5 = 0;          // 偏移 13：保留
-        uint8_t check_byte = 0;         // 偏移 14：预留校验字节
-        uint8_t tail_byte = 0x0d;       // 偏移 15：帧尾
-    };
-
-    static_assert(sizeof(SendPacket) == 16);
-    static_assert(offsetof(SendPacket, target_state) == 11);
-    static_assert(offsetof(SendPacket, tail_byte) == 15);
-
-    struct ReceivePacket {
-        uint8_t header = 0xff;          // 帧头 1
-        uint8_t mode;                   // 模式 2
-        int16_t roll;                   // 3 4
-        int16_t pitch;                  // 5 6
-        int16_t yaw;                    // 7 8
-        int16_t bullet_speed;           // 9 10
-        uint32_t mcu_timestamp;         // 下位机时间戳，单位毫秒 11 12 13 14
-        uint8_t check_byte;             // 校验位 15
-        uint8_t tail_byte = 0x0d;       // 帧尾 16
-    };
-#pragma pack(pop)
+    using SendPacket = v2::CommandFrame;
+    using ReceivePacket = v2::FeedbackFrame;
 
     uint8_t armor_id_to_uint8(const std::string& id) {
         const auto it = id_unit8_map.find(id);
@@ -129,41 +100,29 @@ public:
 
 protected:
     /**
-     * @brief 将云台指令编码为定长串口帧。
-     * @param data 云台指令，正距离表示正在跟踪目标。
-     * @return 含目标状态标志和限幅定点字段的 16 字节数据包。
+     * @brief 显式编码 V2 规划参考，完整规划未就绪时发送无目标帧。
+     * @param data 绝对角度和规划导数，同一时刻且符号一致。
+     * @return 32 字节 V2 帧。
      */
     SendPacket encodeGimbalCommand(const rm_interfaces::msg::GimbalCmd& data) {
-        SendPacket packet;
-        packet.fire_advice = data.fire_advice ? FireState::Fire : FireState::NotFire;
-        packet.yaw = swap_bytes(scaleToInt16(data.yaw, 100.0));
-        packet.pitch = swap_bytes(scaleToInt16(data.pitch, 100.0));
-        packet.distance = swap_bytes(scaleToInt16(data.distance, 100.0));
-        packet.id = armor_id_to_uint8(data.id);
-        packet.target_v_yaw = swap_bytes(scaleToInt16(data.target_v_yaw, 100.0));
-        packet.target_state = std::isfinite(data.distance) && data.distance > 0.0 ? 1 : 0;
-        return packet;
+        auto reference = data;
+        if (feedback_mode_.load() > 1) {
+            reference.reference_valid = false;
+        }
+        return v2::encode(reference, armor_id_to_uint8(data.id));
+    }
+
+    /** @brief 通过完整反馈校验后更新模式，能量机关模式禁止有效规划发送。 */
+    bool decodeFeedback(const ReceivePacket& frame, rm_interfaces::msg::SerialReceiveData& data) {
+        if (!v2::decode(frame, data)) {
+            return false;
+        }
+        feedback_mode_.store(data.mode);
+        return true;
     }
 
 private:
-    /**
-     * @brief 将定标后的数值转换为有符号 16 位字段。
-     * @param value 缩放前的物理量。
-     * @param scale 协议缩放系数。
-     * @return 截断并限幅后的 16 位值；非有限输入转换为 0。
-     */
-    static int16_t scaleToInt16(const double value, const double scale) noexcept {
-        if (!std::isfinite(value)) {
-            return 0;
-        }
-        const double scaled = std::clamp(
-            value * scale,
-            static_cast<double>(std::numeric_limits<int16_t>::min()),
-            static_cast<double>(std::numeric_limits<int16_t>::max())
-        );
-        return static_cast<int16_t>(scaled);
-    }
-
+    std::atomic<uint8_t> feedback_mode_{0};
     std::set<std::string> warned_unknown_ids_;
 };
 

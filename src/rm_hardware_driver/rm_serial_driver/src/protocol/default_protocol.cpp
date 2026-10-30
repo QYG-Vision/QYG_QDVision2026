@@ -19,7 +19,7 @@ namespace qd::serial_driver::protocol {
 
 DefaultProtocol::DefaultProtocol(std::string_view port_name, int speed, bool enable_data_print) {
     auto uart_transporter = std::make_shared<UartTransporter>(std::string(port_name), speed);
-    packet_tool_ = std::make_shared<FixedPacketTool<16>>(uart_transporter);
+    packet_tool_ = std::make_shared<FixedPacketTool<24>>(uart_transporter);
     packet_tool_->enbaleDataPrint(enable_data_print);
 }
 
@@ -43,9 +43,9 @@ DefaultProtocol::getClients(rclcpp::Node::SharedPtr node) const {
 }
 
 void DefaultProtocol::send(const rm_interfaces::msg::GimbalCmd& data) {
-    FixedPacket<16> packet;
+    FixedPacket<32> packet;
     const SendPacket pkt = encodeGimbalCommand(data);
-    packet.loadData<SendPacket>(pkt, 0);
+    packet.copyFrom(pkt.data());
 
     packet_tool_->sendPacket(packet);
 
@@ -61,24 +61,13 @@ void DefaultProtocol::send(const rm_interfaces::msg::GimbalCmd& data) {
 }
 
 bool DefaultProtocol::receive(rm_interfaces::msg::SerialReceiveData& data) {
-    FixedPacket<16> packet;
+    FixedPacket<24> packet;
     if (!packet_tool_->recvPacket(packet)) {
         return false;
     }
-
-    const auto* raw_ptr = packet.buffer();
-    ReceivePacket pkt;
-    std::memcpy(&pkt, raw_ptr, sizeof(ReceivePacket));
-
-    // 解包并处理大小端转换
-    data.mode = pkt.mode;
-    data.roll = swap_bytes(pkt.roll) / 100.0f;
-    data.pitch = swap_bytes(pkt.pitch) / 100.0f;
-    data.yaw = swap_bytes(pkt.yaw) / 100.0f;
-    data.bullet_speed = swap_bytes(pkt.bullet_speed) / 100.0f;
-    data.mcu_timestamp = swap_bytes(pkt.mcu_timestamp);
-
-    return true;
+    ReceivePacket frame{};
+    std::copy_n(packet.buffer(), frame.size(), frame.begin());
+    return decodeFeedback(frame, data);
 }
 
 } // namespace qd::serial_driver::protocol
