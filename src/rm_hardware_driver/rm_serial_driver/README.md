@@ -8,8 +8,9 @@ UART 默认 921600 bit/s，8N1；视觉发送 32 字节，接收 24 字节，帧
 所有多字节字段显式大端编解码。新增四个规划导数、两个实际角速度使用 float32，
 分别直接表示 °/s、°/s²；Pitch 向下为正。`target_v_yaw` 仍是 rad/s ×100。
 
-当前未接入 MPC，求解器明确保持 `reference_valid=false`，仅发送无效参考帧：
-`target_state=0`、开火建议 0、距离 −1 m、角度与运动字段为 0。
+装甲板已接入 MPC；`reference_valid=true` 且字段合法时发送有效 p/v/a。
+无效时发送 `target_state=0`、开火建议 0、距离 −1 m、角度与运动字段为 0。
+可查看 ROS 字段 `reference_status` 区分反馈过期、弹道失败和优化失败。
 能量机关入口和模式 2～5 均禁止有效参考。V1 不兼容，不进行协商或回退。
 
 反馈通过 `serial/receive` 发布实际角速度；非法模式及 NaN/Inf 整帧拒绝。

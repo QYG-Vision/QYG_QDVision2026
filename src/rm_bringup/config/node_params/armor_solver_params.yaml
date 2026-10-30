@@ -33,7 +33,7 @@
       use_ballistic_compensation: true # 只切换发射 pitch；关闭时用几何角，飞行时间预测不变
       predict2send_delay: 0.11         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
-      additional_prediction_time: 0.00 # 根据角速度，给电控指令的额外预测时间
+      additional_prediction_time: 0.00 # MPC目标时域额外前移s，只应用一次，不在输出端再叠加速度
       shooting_range_width: 0.135     # 开火宽度范围
       shooting_range_height: 0.135    # 开火高度范围
       compensator_type: "ceres" # ideal(仅重力) resistance(阻力近似) ceres(ceres线阻力) rk4(四阶龙格库塔)
@@ -44,6 +44,26 @@
         time_step: 0.003
         max_steps: 8000
         hit_distance_threshold: 0.02
+
+      # MPC 约束是初始联调值，不是已经测定的电机能力；运行时修改后需重启节点。
+      mpc:
+        enabled: true
+        horizon: 20                 # 0.2 s 时域
+        dt: 0.01                    # 模型步长 s
+        sample_time: 0.004          # 首区间输出时刻 s，与250 Hz求解周期一致
+        position_weight: 1.0
+        velocity_weight: 0.002
+        acceleration_weight: 0.00001
+        max_iterations: 300
+        tolerance: 0.00001
+        feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
+        target_timeout: 0.3         # 图像目标年龄上限 s
+        yaw:
+          max_velocity: 720.0       # degree/s
+          max_acceleration: 6000.0  # degree/s²
+        pitch:
+          max_velocity: 360.0
+          max_acceleration: 3000.0
 
       # max_out_error 是开火误差，1最大，是整块小装甲板大小
       # max_orientation_angle 是击打装甲板最大角度

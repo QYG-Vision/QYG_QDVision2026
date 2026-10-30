@@ -187,6 +187,7 @@ void ArmorSolverNode::timerCallback() {
     control_msg.yaw = 0;
     control_msg.fire_advice = false;
     control_msg.id = "0";
+    control_msg.reference_status = "no_target";
 
     std::lock_guard<std::mutex> lock(solver_state_mutex_);
     if (solver_ == nullptr) {
@@ -216,7 +217,9 @@ void ArmorSolverNode::timerCallback() {
                 (this->now() - solve_start_time).seconds() * 1e3
             );
 
-            control_msg.header.stamp = solve_start_time;
+            if (!control_msg.reference_valid) {
+                control_msg.header.stamp = solve_start_time;
+            }
 
             if (const auto debug = solver_->get_ballistic_debug()) {
                 constexpr double RAD_TO_DEG = 180.0 / M_PI;
@@ -232,6 +235,9 @@ void ArmorSolverNode::timerCallback() {
             }
 
         } catch (...) {
+            control_msg.reference_valid = false;
+            control_msg.fire_advice = false;
+            control_msg.reference_status = "solver_exception";
             FYT_ERROR("armor_solver", "Something went wrong in solver!");
         }
     }
@@ -998,7 +1004,7 @@ void ArmorSolverNode::setModeCallback(
 }
 
 /**
- * @brief 串口节点回调，更新弹速
+ * @brief 串口节点回调，更新弹速及 MPC 姿态/角速度反馈
  * 
  * @param serial_data 电控上报的数据，其中 bullet_speed 单位为米每秒。
  */
@@ -1006,16 +1012,13 @@ void ArmorSolverNode::serialCallback(
     const rm_interfaces::msg::SerialReceiveData::ConstSharedPtr serial_data
 ) {
     const double bullet_speed = serial_data->bullet_speed;
-    if (!BulletSpeedState::is_valid_sample(bullet_speed)) {
-        return;
-    }
-
     std::lock_guard<std::mutex> lock(solver_state_mutex_);
     if (solver_ == nullptr) {
         solver_ = std::make_unique<Solver>(weak_from_this());
     }
 
     solver_->update_bullet_speed(bullet_speed);
+    solver_->update_feedback(*serial_data);
 }
 
 } // namespace qd::auto_aim

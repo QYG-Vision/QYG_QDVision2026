@@ -33,6 +33,8 @@
 #include <utility>
 // project
 #include "armor_solver/bullet_speed_state.hpp"
+#include "armor_solver/axis_mpc.hpp"
+#include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/logger/log.hpp"
@@ -61,10 +63,13 @@ struct ShootState {
     // 上面几个不起主要作用
 
     ShootMode shoot; // 开火建议
-    State state; // 目标装甲板，整车模型才有
+    State state = State::Zero(); // 目标装甲板，整车模型才有
     YpdCoord aim_ypd; // 电控要瞄准的位置
     YpdCoord aim_ypd_v; // 目标在云台下的球坐标变化率
     std::optional<BallisticDebugData> ballistic_debug;
+    State planning_state = State::Zero(); // 图像参考时刻选中装甲板的状态
+    bool planning_state_valid = false;
+    double wait_duration = 0.0; // 间接击打等待时间，s
 };
 
 struct ShootParam {
@@ -80,6 +85,7 @@ struct ShootParam {
 struct AimResult {
     YpdCoord aim_ypd;
     std::optional<BallisticDebugData> ballistic_debug;
+    double wait_duration = 0.0;
 };
 
 // ros消息转换类
@@ -157,6 +163,14 @@ public:
      */
     void update_bullet_speed(double raw_bullet_speed);
 
+    /**
+     * @brief 缓存 V2 姿态/角速度及其采样时间，供 MPC 初始化。
+     * @param feedback odom 中的绝对姿态及姿态角速度，degree、degree/s，Pitch 向下为正。
+     * @note 与 solve() 共用 solver_state_mutex_。
+     */
+    void update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback);
+
+
     // 可视化用的
     std::vector<std::pair<double, double>> getTrajectory() const noexcept;
 
@@ -166,6 +180,25 @@ public:
     int get_top_level() const;
 
 private:
+    /**
+     * @brief 从同一块装甲板的未来弹道角生成有限时域参考并求解两轴 MPC。
+     * @param aim 当前选板结果及图像时刻的运动状态。
+     * @param target 当前跟踪目标，包含坐标系和采样时间。
+     * @param now 本轮求解的 ROS 时间。
+     * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
+     * @return 反馈新鲜、弹道及两轴优化均成功时返回 true。
+     */
+    bool plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& target,
+                  const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
+    std::unique_ptr<AxisMpc> yaw_mpc_;
+    std::unique_ptr<AxisMpc> pitch_mpc_;
+    AxisMpc::Config mpc_config_;
+    std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
+    bool mpc_enabled_ = true;
+    double feedback_timeout_ = 0.1;
+    double target_timeout_ = 0.3;
+    double mpc_sample_time_ = 0.004;
+
     std::unique_ptr<TrajectoryCompensator> trajectory_compensator_;
     std::unique_ptr<ManualCompensator> manual_compensator_;
     std::weak_ptr<rclcpp::Node> node_;

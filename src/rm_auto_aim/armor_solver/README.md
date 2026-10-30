@@ -1,5 +1,70 @@
 # armor_solver
 
+## 装甲板 MPC 与 V2
+
+现有选板和弹道求解之后接入两轴有限时域约束 MPC。每轴采用
+`p[k+1]=p[k]+v[k]·dt+0.5·a[k]·dt²`、`v[k+1]=v[k]+a[k]·dt`，
+优化整个时域的加速度序列，代价包含角度跟踪、速度跟踪及加速度幅值。
+用 Eigen 活动集 QP 求解器处理全时域速度与加速度约束，不需要新增 OSQP 等运行库。
+
+每次从新鲜 V2 姿态与实际角速度重新初始化，固定当前选中的装甲板预测未来各点，
+逐点计算弹道和手动补偿后的角度。Pitch 在规划边界统一为向下为正；Yaw 展开以跨越
+±180°。不对相邻图像的选板跳变差分，切换目标或重捕获时不沿用上一目标的控制序列。
+间接击打保留选板器的等待时间，并随预测时刻消耗等待时间。
+
+`GimbalCmd.yaw/pitch` 为 MPC 输出角度，四个 `*_deg_s`/`*_deg_s2` 字段是同一首区间
+采样时刻的速度和加速度；`exp_yaw/exp_pitch` 仍是原始弹道瞄准角，
+`yaw_vel/pitch_vel` 仍保留旧几何速度调试语义，不能替代 MPC 字段。
+`target_v_yaw` 始终来自目标消息的敌方自转速度，单位 rad/s。
+
+MPC 用反馈采样年龄加 `predict2send_delay` 将反馈姿态按实际速度外推至参考起点。
+目标预测包含图像年龄、`predict2send_delay` 和子弹飞行时间；`additional_prediction_time`
+只用于前移目标参考，不在 MPC 输出端再次叠加速度。
+输出 `header.stamp` 为求解开始时刻加 `predict2send_delay + sample_time`。
+V2 没有视觉参考时间戳，实际部署须标定延迟并与电控约定执行时刻；不能重复补偿。
+
+只有目标与反馈新鲜、坐标系一致、模式为装甲板、弹道和两轴优化成功时，才设置
+`reference_valid=true`。速度反馈超过配置上限时拒绝规划，不截断测速伪装可行。
+若开启弹道补偿但弹速缺失或弹道失败，参考无效；关闭弹道补偿时允许几何角跟踪，
+开火建议仍需要有效弹速。原有火控外再检查规划输出与瞄准点的偏差，尚未跟上时不建议开火。
+能量机关不在本次 MPC 覆盖范围。
+
+### 默认参数与状态
+
+参数位于 `solver.mpc`，修改后重启节点。`enabled=false` 会发送无效参考，不回退到 V1。
+
+| 参数 | 默认值 | 含义 |
+| --- | --- | --- |
+| horizon / dt | 20 / 0.01 s | 0.2 s 预测时域 |
+| sample_time | 0.004 s | 首控制区间的输出时刻，对应250 Hz求解周期 |
+| position_weight / velocity_weight / acceleration_weight | 1 / 0.002 / 0.00001 | 跟踪与控制代价 |
+| max_iterations / tolerance | 300 / 0.00001 | 活动集迭代上限、归一化容差 |
+| yaw.max_velocity / max_acceleration | 720 °/s / 6000 °/s² | Yaw 初始约束 |
+| pitch.max_velocity / max_acceleration | 360 °/s / 3000 °/s² | Pitch 初始约束 |
+| feedback_timeout / target_timeout | 0.1 s / 0.3 s | 按采样时间判断新鲜度 |
+
+以上约束是联调初始值，未证明符合实车能力；机械限位和电控保护仍由电控实现。
+这是一版双积分参考规划器，不是已经辨识并验证过的电机动力学模型。
+完整弹道时域生成在节点求解线程中执行，250 Hz 的实际耗时需要在目标机测量。
+
+检查 `armor_solver/cmd_gimbal.reference_status`：
+
+| 状态 | 含义 |
+| --- | --- |
+| valid | 完整规划成功，可以由串口编码为有效参考 |
+| no_target / no_feedback | 无目标或尚未收到 V2 反馈 |
+| stale_target / stale_feedback | 图像目标或反馈采样过期 |
+| not_armor_mode / frame_mismatch | 当前任务或反馈坐标系不匹配 |
+| ballistic_failed | 开启弹道补偿，但未来轨迹存在求解失败 |
+| yaw_mpc_failed / pitch_mpc_failed | 对应轴输入、约束或优化未通过 |
+| invalid_mpc_config / invalid_target / invalid_prediction / invalid_reference | 参数或预测非法 |
+| wire_float_overflow / pitch_out_of_wire_range | 超出串口表示范围 |
+| mpc_disabled / solver_exception | 配置关闭或求解异常 |
+
+核心回归测试覆盖静止、阶跃、匀速、闭环收敛、速度边界、Yaw 跨界、随机可行场景和失败分支。
+ROS 集成测试覆盖弹道 Pitch、完整参考、目标切换、采样过期、模式及坐标系。
+
+
 ## qd::ArmorSolverNode
 
 装甲板识别节点

@@ -31,14 +31,14 @@ void ProtocolSentry::send(const rm_interfaces::msg::GimbalCmd &data) {
 
     packet_tool_->sendPacket(packet);
 
-    // 不在 tracking 就不打印延迟了
-    if (data.distance < 0) {
+    // 仅打印完整规划参考的前置时间，header.stamp 是 p/v/a 的共同参考时刻。
+    if (!data.reference_valid) {
         return;
     }
     FYT_DEBUG(
         "serial_driver",
-        "Latency(predict to send): {:.2f} ms",
-        (rclcpp::Clock(RCL_ROS_TIME).now() - data.header.stamp).seconds() * 1e3
+        "Reference lead(send to sample): {:.2f} ms",
+        (rclcpp::Time(data.header.stamp) - rclcpp::Clock(RCL_ROS_TIME).now()).seconds() * 1e3
     );
 }
 
