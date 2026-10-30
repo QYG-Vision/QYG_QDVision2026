@@ -24,11 +24,23 @@ ament_auto_find_build_dependencies()
 ## Build ##
 ###########
 
+add_library(armor_tinympc STATIC
+  third_party/tinympc/admm.cpp
+  third_party/tinympc/tiny_api.cpp
+  third_party/tinympc/rho_benchmark.cpp
+)
+set_target_properties(armor_tinympc PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(armor_tinympc PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/third_party/tinympc>)
+target_link_libraries(armor_tinympc PUBLIC Eigen3::Eigen)
+
 ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
 
 
+
+target_link_libraries(${PROJECT_NAME} $<BUILD_INTERFACE:armor_tinympc>)
 
 rclcpp_components_register_node(${PROJECT_NAME}
   PLUGIN qd::auto_aim::ArmorSolverNode
@@ -49,9 +61,9 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_axis_mpc test/test_axis_mpc.cpp)
+  ament_add_gtest(test_axis_mpc test/test_axis_mpc.cpp src/axis_mpc.cpp)
   target_include_directories(test_axis_mpc PRIVATE include)
-  target_link_libraries(test_axis_mpc Eigen3::Eigen)
+  target_link_libraries(test_axis_mpc Eigen3::Eigen armor_tinympc)
   ament_add_gtest(test_bullet_speed_state test/test_bullet_speed_state.cpp)
   target_include_directories(test_bullet_speed_state PRIVATE include)
 

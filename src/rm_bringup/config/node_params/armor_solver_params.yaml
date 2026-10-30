@@ -54,7 +54,7 @@
         position_weight: 1.0
         velocity_weight: 0.002
         acceleration_weight: 0.00001
-        max_iterations: 300
+        max_iterations: 3000
         tolerance: 0.00001
         feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
         target_timeout: 0.3         # 图像目标年龄上限 s

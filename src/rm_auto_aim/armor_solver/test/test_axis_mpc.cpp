@@ -90,6 +90,8 @@ TEST(AxisMpc, solvesVariedFeasibleReferences) {
         AxisMpc::Config config;
         config.max_velocity = max_velocity;
         config.max_acceleration = max_velocity * 5;
+        // 极端随机参考单独验证充分迭代后的可行性；实时预算耗尽由失败测试覆盖。
+        config.max_iterations = 30000;
         AxisMpc mpc(config);
         for (int i = 0; i < 100; ++i) {
             const double position = 180 * unit(random);
@@ -101,6 +103,34 @@ TEST(AxisMpc, solvesVariedFeasibleReferences) {
             EXPECT_LE(std::abs(sample->acceleration), config.max_acceleration);
         }
     }
+}
+
+TEST(AxisMpc, switchingReferenceDoesNotKeepPreviousDualState) {
+    AxisMpc::Config config;
+    AxisMpc reused(config);
+    AxisMpc fresh(config);
+    ASSERT_TRUE(reused.plan(0, 0, std::vector<double>(21, 30), 0.004));
+    const auto switched = reused.plan(0, 0, std::vector<double>(21, -30), 0.004);
+    const auto expected = fresh.plan(0, 0, std::vector<double>(21, -30), 0.004);
+    ASSERT_TRUE(switched);
+    ASSERT_TRUE(expected);
+    EXPECT_NEAR(switched->acceleration, expected->acceleration, 1e-9);
+    EXPECT_LT(switched->acceleration, 0);
+}
+
+TEST(AxisMpc, rejectsExtremeReferenceWhenRealtimeBudgetIsExhausted) {
+    AxisMpc::Config config;
+    config.max_velocity = 100;
+    config.max_acceleration = 500;
+    AxisMpc realtime(config);
+    EXPECT_FALSE(realtime.plan(152.332, -0.671643, std::vector<double>(21, 279.595), 0.004));
+    config.max_iterations = 30000;
+    AxisMpc extended(config);
+    const auto result = extended.plan(152.332, -0.671643,
+                                      std::vector<double>(21, 279.595), 0.004);
+    ASSERT_TRUE(result);
+    EXPECT_LE(std::abs(result->velocity), config.max_velocity);
+    EXPECT_LE(std::abs(result->acceleration), config.max_acceleration);
 }
 
 TEST(AxisMpc, rejectsBadInputsAndUnconvergedOptimization) {
