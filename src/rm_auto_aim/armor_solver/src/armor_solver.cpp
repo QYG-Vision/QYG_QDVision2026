@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace qd::auto_aim {
 Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
@@ -78,6 +79,28 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     max_orientation_angle[2] = node->declare_parameter("solver.top2.max_orientation_angle", 0.0);
     for (auto& angle: max_orientation_angle)
         angle = angle * M_PI / 180.; // 转弧度制
+
+    mpc_enabled_ = node->declare_parameter("solver.mpc.enabled", true);
+    mpc_config_.horizon = node->declare_parameter("solver.mpc.horizon", 20);
+    mpc_config_.dt = node->declare_parameter("solver.mpc.dt", 0.01);
+    mpc_config_.position_weight = node->declare_parameter("solver.mpc.position_weight", 1.0);
+    mpc_config_.velocity_weight = node->declare_parameter("solver.mpc.velocity_weight", 0.002);
+    mpc_config_.acceleration_weight =
+        node->declare_parameter("solver.mpc.acceleration_weight", 0.00001);
+    mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 300);
+    mpc_config_.tolerance = node->declare_parameter("solver.mpc.tolerance", 1e-5);
+    feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
+    target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
+    mpc_sample_time_ = node->declare_parameter("solver.mpc.sample_time", 0.004);
+    mpc_config_.max_velocity = node->declare_parameter("solver.mpc.yaw.max_velocity", 720.0);
+    mpc_config_.max_acceleration =
+        node->declare_parameter("solver.mpc.yaw.max_acceleration", 6000.0);
+    yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
+    auto pitch_config = mpc_config_;
+    pitch_config.max_velocity = node->declare_parameter("solver.mpc.pitch.max_velocity", 360.0);
+    pitch_config.max_acceleration =
+        node->declare_parameter("solver.mpc.pitch.max_acceleration", 3000.0);
+    pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
 
     node.reset();
 
@@ -143,6 +166,37 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         pitch_inclined_ = 15.0 * M_PI / 180.0;
     }
 
+    // 在访问模型数组之前验证所用输入，避免坏目标被送入选板器或规划器。
+    const bool armor_translation = get_top_level() == 0 && use_armor_top_;
+    const auto finite_xyz = [](const auto& value) {
+        return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
+    };
+    bool valid_target = target.tracking && std::isfinite(target.v_yaw)
+        && std::isfinite(target.yaw);
+    if (armor_translation) {
+        valid_target = valid_target && finite_xyz(target.position_armor)
+            && finite_xyz(target.velocity_armor);
+    } else {
+        valid_target = valid_target && finite_xyz(target.position) && finite_xyz(target.velocity)
+            && target.armors_num > 0
+            && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
+            && static_cast<size_t>(target.armors_num) <= target.dz_list.size();
+        if (valid_target) {
+            for (int i = 0; i < target.armors_num; ++i) {
+                valid_target = valid_target && std::isfinite(target.radius_list[i])
+                    && target.radius_list[i] > 0.0 && std::isfinite(target.dz_list[i]);
+            }
+        }
+    }
+    if (!valid_target) {
+        rm_interfaces::msg::GimbalCmd invalid;
+        invalid.header = target.header;
+        invalid.id = target.id;
+        invalid.distance = -1.0;
+        invalid.reference_status = "invalid_target";
+        return invalid;
+    }
+
     // 根据top_level选择决策
     RosTarget target_msg(target);
     ShootState target_aim;
@@ -157,15 +211,14 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
 
     // Initialize gimbal_cmd
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
-    gimbal_cmd.reference_valid = false; // 尚未接入完整 MPC 规划参考
+    gimbal_cmd.reference_valid = false; // 只有两轴优化完成后才置有效
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
     auto send_ypd = target_aim.aim_ypd;
     auto send_ypd_v = target_aim.aim_ypd_v;
-    gimbal_cmd.yaw =
-        reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * additional_prediction_time)) * 180 / M_PI;
-    gimbal_cmd.pitch =
-        -(send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time)) * 180 / M_PI;
+    // 保存原始瞄准角供失败时诊断；有效发送角由 MPC 覆盖，不再额外叠加速度预测。
+    gimbal_cmd.yaw = send_ypd.yaw * 180 / M_PI;
+    gimbal_cmd.pitch = -send_ypd.pitch * 180 / M_PI;
     gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
     gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
     gimbal_cmd.distance = send_ypd.distance;
@@ -177,8 +230,12 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
     gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
     gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
-    gimbal_cmd.target_v_yaw = target_aim.state(7);
+    gimbal_cmd.target_v_yaw = target.v_yaw;
 
+    if (!plan_mpc(target_aim, target, current_time, gimbal_cmd)) {
+        gimbal_cmd.reference_valid = false;
+        gimbal_cmd.fire_advice = false;
+    }
     return gimbal_cmd;
 }
 
@@ -365,6 +422,20 @@ ShootState Solver::get_aim(const RosTarget& target_msg, const Eigen::Vector3d& g
         gimbal_rpy
     );
 
+    if (target_aim.aim_ypd.distance > 0.0 && !hit_state_vec.empty()) {
+        size_t selected = 0;
+        double error = std::numeric_limits<double>::infinity();
+        for (size_t i = 0; i < hit_state_vec.size(); ++i) {
+            const double candidate = (hit_state_vec[i] - target_aim.state).squaredNorm();
+            if (candidate < error) {
+                error = candidate;
+                selected = i;
+            }
+        }
+        target_aim.planning_state = filters[selected];
+        target_aim.planning_state_valid = true;
+    }
+
     // 火控
     target_aim.shoot = isSuggestFire(
         target_aim.aim_ypd,
@@ -408,6 +479,9 @@ ShootState Solver::get_aim_positon(const RosTarget& target_msg, const Eigen::Vec
     );
 
     auto target_aim = YpdCoord_to_ShootState(aim_ypd, isFire);
+    target_aim.state = pre_state;
+    target_aim.planning_state = armor_state;
+    target_aim.planning_state_valid = true;
     target_aim.aim_ypd = aim_ypd;
     target_aim.aim_ypd_v = get_gimbal_ypd_v(p, p_v, gimbal_rpy);
     target_aim.ballistic_debug = aim_result.ballistic_debug;
@@ -639,7 +713,8 @@ std::pair<AimResult, State> Solver::choose_indirect_aim(
     const double time_to_emerge = actual_min_wait / std::abs(w);
     auto aim_state = state_predict(indirect_aim_state, time_to_emerge);
     const Eigen::Vector3d target_pos = state_to_armor_pos(aim_state);
-    const auto aim_result = target_pos_to_aim_ypd(target_pos);
+    auto aim_result = target_pos_to_aim_ypd(target_pos);
+    aim_result.wait_duration = time_to_emerge;
 
     return { aim_result, indirect_aim_state };
 }
@@ -692,6 +767,7 @@ ShootState Solver::state_vec_to_aim(
     target_aim.state = target_aim_result_and_state.second;
     target_aim.aim_ypd = target_aim_result_and_state.first.aim_ypd;
     target_aim.ballistic_debug = target_aim_result_and_state.first.ballistic_debug;
+    target_aim.wait_duration = target_aim_result_and_state.first.wait_duration;
     auto target_pos = state_to_armor_pos(target_aim_result_and_state.second);
     auto armor_v = state_to_armor_v(target_aim_result_and_state.second);
     target_aim.aim_ypd_v = get_gimbal_ypd_v(target_pos, armor_v, gimbal_rpy); // 计算ypd_v
