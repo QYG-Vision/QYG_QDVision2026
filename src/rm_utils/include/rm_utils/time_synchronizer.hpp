@@ -22,6 +22,7 @@ public:
         
         last_raw_mcu_time_ = 0;
         raw_mcu_time_accumulator_ = 0;
+        backward_jump_count_ = 0;
     }
 
     /**
@@ -38,8 +39,25 @@ public:
             last_raw_mcu_time_ = raw_mcu_timestamp;
         } else {
             const uint32_t elapsed = raw_mcu_timestamp - last_raw_mcu_time_;
-            // 重复快照和逆序帧保持原参考时间；无符号差自然处理 uint32 回绕。
-            if (elapsed == 0 || elapsed >= 0x80000000U) return expected_pc_time_;
+            // 重复快照保持原参考时间；无符号差自然处理 uint32 回绕。
+            if (elapsed == 0) return expected_pc_time_;
+            if (elapsed >= 0x80000000U) {
+                // 单个逆序帧不能触发重置；连续出现说明 MCU 可能重启，重新建立时间锚点。
+                ++backward_jump_count_;
+                if (backward_jump_count_ < 3) return expected_pc_time_;
+
+                raw_mcu_time_accumulator_ = raw_mcu_timestamp;
+                last_raw_mcu_time_ = raw_mcu_timestamp;
+                const double time_scale = is_timestamp_us ? 1e-6 : 1e-3;
+                const double current_mcu_time = raw_mcu_time_accumulator_ * time_scale;
+                last_mcu_time_ = current_mcu_time;
+                last_pc_time_ = current_pc_time_sec;
+                last_sync_time_ = current_pc_time_sec;
+                expected_pc_time_ = current_pc_time_sec;
+                backward_jump_count_ = 0;
+                return current_pc_time_sec;
+            }
+            backward_jump_count_ = 0;
             raw_mcu_time_accumulator_ += elapsed;
             last_raw_mcu_time_ = raw_mcu_timestamp;
         }
@@ -50,7 +68,7 @@ public:
 
         // 3. 首次启动：初始化基准锚点
         if (!is_initialized_) {
-            last_mcu_time_ = current_mcu_time;
+            last_mcu_time_ = raw_mcu_timestamp * time_scale;
             last_pc_time_ = current_pc_time_sec;
             last_sync_time_ = current_pc_time_sec;
             expected_pc_time_ = current_pc_time_sec;
@@ -62,6 +80,19 @@ public:
         // 防御性逻辑：MCU 时钟异常停止或乱序包
         if (mcu_delta <= 0) {
             return expected_pc_time_; // 保持上一次的预测
+        }
+
+        // MCU 重启后，新时间戳有时仍会落在半回绕范围内，单靠无符号差无法识别。
+        // 若 MCU 时间跳跃远大于 PC 实际经过时间，立即重新锚定，避免 TF 长时间停在旧时刻。
+        const double pc_delta = current_pc_time_sec - last_sync_time_;
+        if (mcu_delta > 2.0 && mcu_delta > pc_delta * 4.0 + 1.0) {
+            raw_mcu_time_accumulator_ = raw_mcu_timestamp;
+            last_raw_mcu_time_ = raw_mcu_timestamp;
+            last_mcu_time_ = raw_mcu_timestamp * time_scale;
+            last_pc_time_ = current_pc_time_sec;
+            last_sync_time_ = current_pc_time_sec;
+            expected_pc_time_ = current_pc_time_sec;
+            return current_pc_time_sec;
         }
 
         // 4. 根据当前锁相环追踪的偏斜率(skew) 预测到达时间
@@ -115,6 +146,7 @@ private:
     // 溢出处理状态
     uint32_t last_raw_mcu_time_;
     uint64_t raw_mcu_time_accumulator_;
+    uint8_t backward_jump_count_;
 };
 
 } // namespace qd::utils

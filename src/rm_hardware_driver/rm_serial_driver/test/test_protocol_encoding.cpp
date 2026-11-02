@@ -154,4 +154,35 @@ TEST(V2TimeSynchronizer, retainsDuplicateTimeAndUnwrapsThroughZero) {
     EXPECT_DOUBLE_EQ(sync.sync(0, 2000.0), 2000.0);
     EXPECT_DOUBLE_EQ(sync.sync(0, 2001.0), 2000.0);
 }
+
+TEST(V2TimeSynchronizer, recoversAfterMcuTimestampRestart) {
+    qd::utils::TimeSynchronizer sync;
+    EXPECT_DOUBLE_EQ(sync.sync(1000000U, 1000.0), 1000.0);
+    EXPECT_NEAR(sync.sync(1000100U, 1000.1), 1000.1, 1e-6);
+
+    // MCU 重启后时间戳从较大值回到零，连续几个新包后应重新锚定到 PC 时钟。
+    EXPECT_DOUBLE_EQ(sync.sync(0U, 1000.2), 1000.1);
+    EXPECT_DOUBLE_EQ(sync.sync(1U, 1000.3), 1000.1);
+    EXPECT_NEAR(sync.sync(2U, 1000.4), 1000.4, 1e-6);
+    EXPECT_NEAR(sync.sync(102U, 1000.5), 1000.5, 1e-6);
+}
+
+TEST(V2TimeSynchronizer, rejectsOneOutOfOrderPacketWithoutReset) {
+    qd::utils::TimeSynchronizer sync;
+    EXPECT_DOUBLE_EQ(sync.sync(0xfffffffeU, 1000.0), 1000.0);
+    EXPECT_NEAR(sync.sync(0U, 1000.002), 1000.002, 1e-6);
+
+    // 回绕后的旧包只应被丢弃，后续正常包仍按回绕后的序列继续同步。
+    EXPECT_DOUBLE_EQ(sync.sync(0xffffffffU, 1000.003), 1000.002);
+    EXPECT_NEAR(sync.sync(1U, 1000.003), 1000.003, 1e-6);
+}
+
+TEST(V2TimeSynchronizer, recoversFromLargeInRangeTimestampJump) {
+    qd::utils::TimeSynchronizer sync;
+    EXPECT_DOUBLE_EQ(sync.sync(3000000000U, 1000.0), 1000.0);
+
+    // 重启后的新值仍可能落在半回绕范围内，需按 PC 时间重新锚定。
+    EXPECT_NEAR(sync.sync(1000U, 1000.1), 1000.1, 1e-6);
+    EXPECT_NEAR(sync.sync(1100U, 1000.2), 1000.2, 1e-6);
+}
 } // namespace

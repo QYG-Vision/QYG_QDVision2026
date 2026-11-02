@@ -19,6 +19,7 @@
 // std
 #include <chrono>
 #include <cstdint>
+#include <cmath>
 #include <memory>
 #include <thread>
 // ros2
@@ -76,6 +77,7 @@ void SerialDriverNode::init() {
 
     // TF broadcaster
     timestamp_offset_ = this->declare_parameter("timestamp_offset", 0.0);
+    max_timestamp_age_ = this->declare_parameter("max_timestamp_age", 0.2);
     tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*this);
 
     // Param client
@@ -118,6 +120,25 @@ void SerialDriverNode::listenLoop() {
                 static_cast<int64_t>(sync_time_sec * 1e9), pc_now.get_clock_type());
             timestamp_offset_ = this->get_parameter("timestamp_offset").as_double();
             real_gimbal_time += rclcpp::Duration::from_seconds(timestamp_offset_);
+
+            // 异常的 MCU 时间戳不能阻塞 TF。正常串口延迟应远小于该阈值；超出时使用
+            // 当前 PC 时刻发布本次姿态，避免 armor_solver 查询图像时刻而触发未来外推。
+            const double timestamp_age = (pc_now - real_gimbal_time).seconds();
+            if (!std::isfinite(timestamp_age) || timestamp_age > max_timestamp_age_
+                || timestamp_age < -max_timestamp_age_) {
+                if (!timestamp_fallback_active_) {
+                    FYT_WARN(
+                        "serial_driver",
+                        "Invalid synchronized timestamp age {:.3f}s; using PC receive time",
+                        timestamp_age
+                    );
+                    time_sync_.reset();
+                    timestamp_fallback_active_ = true;
+                }
+                real_gimbal_time = pc_now;
+            } else {
+                timestamp_fallback_active_ = false;
+            }
 
             FYT_DEBUG(
                 "serial_driver",

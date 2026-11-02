@@ -79,6 +79,8 @@ private:
 
   // Broadcast tf from odom to gimbal_link
   double timestamp_offset_ = 0;
+  double max_timestamp_age_ = 0.2;
+  bool timestamp_fallback_active_ = false;
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   // 状态机

@@ -48,8 +48,8 @@
       # MPC 约束是初始联调值，不是已经测定的电机能力；运行时修改后需重启节点。
       mpc:
         enabled: true
-        mode: direct    # angle_command 角度规划；direct 直发对照
-        command_weight: 0.05        # 偏离瞄准角的代价；越大越接近直发
+        mode: angle_command    # angle_command 角度规划；direct 直发对照
+        command_weight: 0.5        # 偏离瞄准角的代价；越大越接近直发
         horizon: 20                 # 0.2 s 时域
         dt: 0.01                    # 模型步长 s
         position_weight: 1.0
