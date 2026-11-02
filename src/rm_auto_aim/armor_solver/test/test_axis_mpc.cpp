@@ -40,12 +40,18 @@ TEST(AngleCommandMpc, settlesThroughPositionControllerModel) {
     AxisMpc::Config config;
     AxisMpc mpc(config);
     double actual = 0;
-    const double alpha = -std::expm1(-0.004 / config.response_time);
+    double velocity = 0;
+    const double period = 0.004;
+    const double h = period / config.response_time;
+    const double decay = std::exp(-h);
     for (int i = 0; i < 250; ++i) {
-        const auto step = mpc.plan(actual, std::vector<double>(21, 10));
+        const auto step = mpc.plan(actual, std::vector<double>(21, 10), velocity);
         ASSERT_TRUE(step) << i;
         EXPECT_LE(std::abs(step->position - actual), config.max_command_lead);
-        actual += alpha * (step->position - actual);
+        const double error = actual - step->position;
+        actual = step->position + decay * ((1 + h) * error + period * velocity);
+        velocity = decay * (-period / (config.response_time * config.response_time) * error
+                            + (1 - h) * velocity);
     }
     EXPECT_NEAR(actual, 10, 0.01);
 }
@@ -69,8 +75,10 @@ TEST(AngleCommandMpc, comparesAngleOnlyPlantAgainstDirect) {
             AxisMpc::Config config;
             AxisMpc mpc(config);
             double actual = 0;
+            double velocity = 0;
             const double period = 0.004;
-            const double alpha = -std::expm1(-period / 0.06);
+            const double h = period / config.response_time;
+            const double decay = std::exp(-h);
             for (int i = 0; i < 250; ++i) {
                 const auto goal = [scenario](double t) {
                     if (scenario == 0) return 10.0;
@@ -82,12 +90,15 @@ TEST(AngleCommandMpc, comparesAngleOnlyPlantAgainstDirect) {
                     reference[k] = goal(i * period + k * config.dt);
                 double command = reference[0];
                 if (mode != 0) {
-                    const auto step = mpc.plan(actual, reference);
+                    const auto step = mpc.plan(actual, reference, velocity);
                     ASSERT_TRUE(step) << scenario << " " << mode << " " << i;
                     command = step->position;
                 }
                 if (i == 0) first_commands[mode] = command;
-                actual += alpha * (command - actual);
+                const double displacement = actual - command;
+                actual = command + decay * ((1 + h) * displacement + period * velocity);
+                velocity = decay * (-period / (config.response_time * config.response_time)
+                                    * displacement + (1 - h) * velocity);
                 const double error = actual - goal((i + 1) * period);
                 errors[mode] += error * error;
             }
@@ -103,6 +114,21 @@ TEST(AngleCommandMpc, comparesAngleOnlyPlantAgainstDirect) {
         std::cout << std::endl;
     }
 }
+TEST(AngleCommandMpc, brakesAccordingToMeasuredVelocity) {
+    AxisMpc::Config config;
+    AxisMpc mpc(config);
+    const std::vector<double> reference(21, 10.0);
+    const auto stationary = mpc.plan(9.0, reference, 0.0);
+    const auto approaching = mpc.plan(9.0, reference, 60.0);
+    const auto departing = mpc.plan(9.0, reference, -60.0);
+    ASSERT_TRUE(stationary);
+    ASSERT_TRUE(approaching);
+    ASSERT_TRUE(departing);
+    EXPECT_LT(approaching->position, stationary->position);
+    EXPECT_GT(departing->position, stationary->position);
+    EXPECT_FALSE(mpc.plan(9.0, reference, std::numeric_limits<double>::quiet_NaN()));
+}
+
 TEST(AngleCommandMpc, rejectsInvalidInputsAndConfiguration) {
     AxisMpc::Config config;
     AxisMpc mpc(config);

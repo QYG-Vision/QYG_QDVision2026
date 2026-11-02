@@ -69,6 +69,20 @@ TEST_F(SolverMotionSwitches, requiresFeedbackThenPublishesCompleteReference) {
     EXPECT_EQ(command.target_v_yaw, 0);
 }
 
+TEST_F(SolverMotionSwitches, usesMeasuredVelocityAtSameAngleAndTimestamp) {
+    solver_->update_feedback(feedback_);
+    const auto stationary = solve();
+    ASSERT_TRUE(stationary.reference_valid) << stationary.reference_status;
+    // 相同角度与采样时刻，正向运动应生成反向制动指令。
+    feedback_.yaw_actual_vel_deg_s = 30;
+    feedback_.pitch_actual_vel_deg_s = 30;
+    solver_->update_feedback(feedback_);
+    const auto moving = solve();
+    ASSERT_TRUE(moving.reference_valid) << moving.reference_status;
+    EXPECT_LT(moving.yaw, stationary.yaw);
+    EXPECT_LT(moving.pitch, stationary.pitch);
+}
+
 TEST_F(SolverMotionSwitches, plansBallisticPitchWithoutDerivativeFeedforward) {
     node_->set_parameter(rclcpp::Parameter("solver.use_ballistic_compensation", true));
     solver_->update_bullet_speed(16);

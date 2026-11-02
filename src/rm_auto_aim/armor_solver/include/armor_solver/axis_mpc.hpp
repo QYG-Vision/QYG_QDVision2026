@@ -18,6 +18,7 @@ public:
     struct Config {
         double response_time = 0.06;
         double command_weight = 0.05;
+        double velocity_weight = 0.001;
         double max_command_lead = 10.0;
         int horizon = 20;
         double dt = 0.01;
@@ -41,10 +42,12 @@ public:
      * @brief 求解绝对角度指令，返回的导数字段为零。
      * @param position 实际起始角，degree，yaw 已展开。
      * @param reference 初始点及 horizon 个未来角度，degree。
+     * @param velocity 实际起始姿态角速度，degree/s，与 position 同轴同正方向。
      * @return 收敛且满足约束的参考；非法输入或求解失败时为空。
      * @note 实例由求解线程独占，每次清空上一轮对偶状态以隔离目标切换。
      */
-    std::optional<Sample> plan(double position, const std::vector<double>& reference) const;
+    std::optional<Sample> plan(double position, const std::vector<double>& reference,
+                               double velocity = 0.0) const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

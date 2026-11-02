@@ -129,11 +129,13 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
             && std::abs(command.pitch_diff) <= pitch_tolerance;
         return true;
     }
-    const auto yaw_plan = yaw_mpc_->plan(yaw_initial, yaw_reference);
+    const auto yaw_plan = yaw_mpc_->plan(yaw_initial, yaw_reference,
+                                         feedback_->yaw_actual_vel_deg_s);
     if (!yaw_plan) {
         return reject("yaw_mpc_failed");
     }
-    const auto pitch_plan = pitch_mpc_->plan(pitch_initial, pitch_reference);
+    const auto pitch_plan = pitch_mpc_->plan(pitch_initial, pitch_reference,
+                                             feedback_->pitch_actual_vel_deg_s);
     if (!pitch_plan) {
         return reject("pitch_mpc_failed");
     }

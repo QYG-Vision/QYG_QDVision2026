@@ -53,12 +53,13 @@
         horizon: 20                 # 0.2 s 时域
         dt: 0.01                    # 模型步长 s
         position_weight: 1.0
+        velocity_weight: 0.001      # 实际角速度相对参考角速度的误差权重
         max_iterations: 3000
         tolerance: 0.00001
         feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
         target_timeout: 0.3         # 图像目标年龄上限 s
         yaw:
-          response_time: 0.06      # s，一阶闭环时间常数，试验初值，需实测辨识
+          response_time: 0.06      # s，二阶临界阻尼模型时间尺度，试验初值，需实测辨识
           max_command_lead: 10.0    # degree，相对当前估计姿态的指令幅度上限
         pitch:
           response_time: 0.08      # s，试验初值，需实测辨识

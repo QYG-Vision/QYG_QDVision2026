@@ -88,6 +88,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     }
     direct_angle_command_ = mpc_mode == "direct";
     mpc_config_.command_weight = node->declare_parameter("solver.mpc.command_weight", 0.05);
+    mpc_config_.velocity_weight = node->declare_parameter("solver.mpc.velocity_weight", 0.001);
     mpc_config_.response_time = node->declare_parameter("solver.mpc.yaw.response_time", 0.06);
     mpc_config_.max_command_lead = node->declare_parameter("solver.mpc.yaw.max_command_lead", 10.0);
     mpc_config_.horizon = node->declare_parameter("solver.mpc.horizon", 20);
