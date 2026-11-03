@@ -15,10 +15,10 @@
 
       armor_model:
         q_x: 0.01
-        q_v: 110.0
+        q_v: 20.0
 
         r_yaw: 1.0
-        r_pitch: 1.5
+        r_pitch: 1.5 
         r_distance: 50.0
 
     tracker:
@@ -31,7 +31,7 @@
     solver:
       use_armor_top: true            # 是否使用平移运动模型(armor_model),仅在 top0 时使用
       use_ballistic_compensation: true # 只切换发射 pitch；关闭时用几何角，飞行时间预测不变
-      predict2send_delay: 0.11         # 从预测到串口发送的延迟
+      predict2send_delay: 0.17         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
       additional_prediction_time: 0.00 # MPC目标时域额外前移s，只应用一次，不在输出端再叠加速度
       shooting_range_width: 0.135     # 开火宽度范围
@@ -49,7 +49,7 @@
       mpc:
         enabled: true
         mode: angle_command    # angle_command 角度规划；direct 直发对照
-        command_weight: 0.5        # 偏离瞄准角的代价；越大越接近直发
+        command_weight: 1.0       # 偏离瞄准角的代价；越大越接近直发
         horizon: 20                 # 0.2 s 时域
         dt: 0.01                    # 模型步长 s
         position_weight: 1.0
