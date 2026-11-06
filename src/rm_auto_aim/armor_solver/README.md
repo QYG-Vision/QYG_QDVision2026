@@ -1,52 +1,10 @@
 # armor_solver
 
-## 装甲板角度 MPC 与 V2
+## 装甲板 V2 直发
 
-`solver.mpc.mode` 仅支持 `angle_command`（默认）和 `direct`。旧加速度轨迹模式已删除，其他模式值在节点构造时报告配置错误。
+`solver.mpc.mode` 默认为 `direct`。直发使用目标预测与弹道补偿得到绝对 yaw/pitch，速度和加速度前馈为零。目标、反馈、弹道或坐标系检查失败时输出无效参考并撤销开火建议。开火检查使用实际反馈与瞄准角的误差。
 
-- `angle_command`：TinyMPC 直接优化绝对角度指令，使用角度、实际角速度二阶状态，按临界阻尼闭环模型 `angle_ddot=(command-angle)/tau²-2*angle_dot/tau` 精确离散化，`tau=response_time`。参考角速度由未来瞄准角差分生成。发送首个控制角度，每周期重新规划。
-- `direct`：使用相同弹道预测链路，直接发送参考首点，仍检查目标、反馈、弹道和坐标系。
-
-两种模式的速度、加速度前馈字段均为零，下位机使用绝对 yaw/pitch。实际角速度反馈用于将采样姿态外推到当前时刻，并作为 MPC 初始速度状态。V2 反馈没有实际角加速度字段，不对角速度差分后冒充实测加速度。yaw 连续展开后规划，发送时归一化；pitch 保留协议范围检查。
-`exp_yaw/exp_pitch` 保留原始瞄准角，`yaw_vel/pitch_vel` 保留几何速度调试含义。`target_v_yaw` 是敌方自转速度，单位 rad/s。
-
-原有火控条件之外，检查实际反馈与瞄准参考首点的误差；指令领先不表示实际枪口对准。求解失败输出无效参考，不自动切换直发。
-
-### 参数
-
-配置文件为 `rm_bringup/config/node_params/armor_solver_params.yaml`，修改后重启节点。两种模式均保持 `enabled=true`；关闭会输出无效参考。
-
-| 参数 | 当前值 | 含义 |
-| --- | --- | --- |
-| mode | angle_command | 角度规划；direct 为直发对照 |
-| horizon / dt | 20 / 0.01 s | 0.2 s 预测时域 |
-| position_weight / command_weight | 1 / 0.5 | 实际角跟踪与指令偏离参考的代价 |
-| velocity_weight | 0.001 | 实际角速度与参考角速度误差的代价 |
-| yaw.response_time / pitch.response_time | 0.06 / 0.08 s | 二阶临界阻尼时间尺度，初值需重新辨识，不等同旧一阶响应 |
-| yaw.max_command_lead / pitch.max_command_lead | 10 / 5 degree | 相对本轮当前姿态估计的指令幅度上限 |
-| max_iterations / tolerance | 3000 / 0.00001 | ADMM 迭代上限与容差 |
-| feedback_timeout / target_timeout | 0.1 / 0.3 s | 采样新鲜度检查 |
-
-指令幅度上限不是相邻帧变化率约束，也不保证真实电机速度或加速度。
-velocity_weight 是内部速度跟踪权重，输出仍为角度指令，速度、加速度前馈为零。
-输出时间戳为求解时间加 `predict2send_delay`。该参数仍参与目标预测，但当前二阶模型未包含纯输入延迟队列，不应与闭环响应重复补偿。模型使用固定临界阻尼假设，尚未包含历史指令、可辨识阻尼比或指令变化率惩罚，参数及实车效果需联合实测。
-
-### 验证与部署
-
-单轴测试覆盖保持、幅度限制、yaw 接缝、二阶闭环收敛、同角度不同实测速度的制动差异、非法输入及预算耗尽，模拟对照只保留直发和角度 MPC。ROS 集成测试同步覆盖角度输出、切换、反馈过期和直发。
-当前环境没有 Docker，完整 ROS 构建、集成测试和实车效果未验证。
-
-在仓库容器内执行：
-
-```bash
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install --packages-select armor_solver
-source install/setup.bash
-colcon test --packages-select armor_solver
-colcon test-result --verbose
-```
-
-上车先禁止开火，用 `direct` 做小幅阶跃及匀速往返，记录发送角、实际反馈、角速度和时间戳，分别辨识两轴响应与纯延迟；再用 `angle_command` 对照实际角误差、振荡、反向恢复及求解耗时。直发对照只需切换 mode 并重启。
+保留 `solver.mpc.enabled` 和反馈、目标超时参数。修改配置后重启节点。
 
 ## qd::ArmorSolverNode
 

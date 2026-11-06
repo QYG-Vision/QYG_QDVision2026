@@ -33,7 +33,6 @@
 #include <utility>
 // project
 #include "armor_solver/bullet_speed_state.hpp"
-#include "armor_solver/axis_mpc.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/target.hpp"
@@ -186,16 +185,12 @@ private:
      * @param target 当前跟踪目标，包含坐标系和采样时间。
      * @param now 本轮求解的 ROS 时间。
      * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
-     * @return 反馈新鲜、弹道及两轴优化均成功时返回 true。
+     * @return 反馈新鲜且瞄准参考有效时返回 true。
      */
     bool plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& target,
                   const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
-    std::unique_ptr<AxisMpc> yaw_mpc_;
-    std::unique_ptr<AxisMpc> pitch_mpc_;
-    AxisMpc::Config mpc_config_;
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;
-    bool direct_angle_command_ = false;
     double feedback_timeout_ = 0.1;
     double target_timeout_ = 0.3;
 

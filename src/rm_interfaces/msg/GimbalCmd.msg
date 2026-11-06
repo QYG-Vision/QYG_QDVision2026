@@ -13,7 +13,7 @@ float64 yaw_vel     # 超调量的 yaw 角速度
 float64 pitch_vel   # 超调量的 pitch 角速度，向下为正
 float64 target_v_yaw # EKF 状态量 v_yaw，目标自转角速度，单位弧度每秒
 
-# V2 完整规划参考；只有 MPC 求解成功且反馈新鲜时为 true。
+# V2 完整规划参考；瞄准参考有效且反馈新鲜时为 true。
 bool reference_valid
 float32 yaw_vel_deg_s # degree/s，与最终 yaw 同方向、同一规划时刻
 float32 pitch_vel_deg_s # degree/s，向下为正，包含弹道补偿

@@ -45,25 +45,12 @@
         max_steps: 8000
         hit_distance_threshold: 0.02
 
-      # MPC 约束是初始联调值，不是已经测定的电机能力；运行时修改后需重启节点。
+      # V2 直发参考配置，修改后重启节点。
       mpc:
         enabled: true
-        mode: angle_command    # angle_command 角度规划；direct 直发对照
-        command_weight: 1.0       # 偏离瞄准角的代价；越大越接近直发
-        horizon: 20                 # 0.2 s 时域
-        dt: 0.01                    # 模型步长 s
-        position_weight: 1.0
-        velocity_weight: 0.001      # 实际角速度相对参考角速度的误差权重
-        max_iterations: 3000
-        tolerance: 0.00001
-        feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
-        target_timeout: 0.3         # 图像目标年龄上限 s
-        yaw:
-          response_time: 0.06      # s，二阶临界阻尼模型时间尺度，试验初值，需实测辨识
-          max_command_lead: 10.0    # degree，相对当前估计姿态的指令幅度上限
-        pitch:
-          response_time: 0.08      # s，试验初值，需实测辨识
-          max_command_lead: 5.0     # degree，非电机实际速度/加速度保证
+        mode: direct
+        feedback_timeout: 0.1
+        target_timeout: 0.3
 
       # max_out_error 是开火误差，1最大，是整块小装甲板大小
       # max_orientation_angle 是击打装甲板最大角度
