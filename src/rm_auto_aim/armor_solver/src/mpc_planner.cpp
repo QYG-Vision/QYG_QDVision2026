@@ -1,6 +1,7 @@
 #include "armor_solver/armor_solver.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace qd::auto_aim {
@@ -96,6 +97,58 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
     command.header.stamp = now + rclcpp::Duration::from_seconds(predict2send_delay_);
     command.reference_valid = true;
     command.reference_status = "valid_direct";
+    if (use_acceleration_mpc_) {
+        constexpr double STEP = 0.01;
+        constexpr std::size_t HORIZON = 10;
+        std::array<double, HORIZON> yaw_reference{};
+        std::array<double, HORIZON> pitch_reference{};
+        for (std::size_t i = 0; i < HORIZON; ++i) {
+            const auto future_point = state_to_armor_pos(state_predict(hit_state, (i + 1) * STEP));
+            if (!future_point.allFinite() || future_point.norm() <= 0.0) {
+                return reject("invalid_prediction");
+            }
+            const auto future = target_pos_to_aim_ypd(future_point);
+            if (use_ballistic_compensation_
+                && (!future.ballistic_debug || !future.ballistic_debug->ballistic_success)) {
+                return reject("ballistic_failed");
+            }
+            yaw_reference[i] = command.yaw_diff + std::remainder(
+                future.aim_ypd.yaw * RAD_TO_DEG - command.yaw, 360.0);
+            pitch_reference[i] = -future.aim_ypd.pitch * RAD_TO_DEG - feedback_->pitch;
+            if (!std::isfinite(yaw_reference[i]) || !std::isfinite(pitch_reference[i])) {
+                return reject("invalid_reference");
+            }
+        }
+
+        // 每轴在预测窗口内使用一个常值加速度，最小化角度跟踪误差平方和。
+        // 单变量二次问题的有界最优解可直接由无约束最优解限幅得到。
+        const auto acceleration = [&](const auto& reference, double velocity) {
+            double numerator = 0.0;
+            double denominator = 0.0;
+            for (std::size_t i = 0; i < reference.size(); ++i) {
+                const double t = (i + 1) * STEP;
+                const double gain = 0.5 * t * t;
+                numerator += gain * (reference[i] - velocity * t);
+                denominator += gain * gain;
+            }
+            return std::clamp(numerator / denominator,
+                              -mpc_max_acceleration_, mpc_max_acceleration_);
+        };
+        const double yaw_velocity = feedback_->yaw_actual_vel_deg_s;
+        const double pitch_velocity = feedback_->pitch_actual_vel_deg_s;
+        const double yaw_acc = acceleration(yaw_reference, yaw_velocity);
+        const double pitch_acc = acceleration(pitch_reference, pitch_velocity);
+        command.yaw = std::remainder(
+            feedback_->yaw + (yaw_velocity + 0.5 * yaw_acc * STEP) * STEP, 360.0);
+        command.pitch = feedback_->pitch + (pitch_velocity + 0.5 * pitch_acc * STEP) * STEP;
+        command.yaw_vel_deg_s = yaw_velocity + yaw_acc * STEP;
+        command.pitch_vel_deg_s = pitch_velocity + pitch_acc * STEP;
+        command.yaw_acc_deg_s2 = yaw_acc;
+        command.pitch_acc_deg_s2 = pitch_acc;
+        command.header.stamp = rclcpp::Time(command.header.stamp)
+            + rclcpp::Duration::from_seconds(STEP);
+        command.reference_status = "valid_mpc";
+    }
     const double yaw_tolerance = std::atan2(shooting_range_w_ * 0.5
         * max_out_error[top_level], command_distance) * RAD_TO_DEG;
     const double pitch_tolerance = std::atan2(shooting_range_h_ * 0.5

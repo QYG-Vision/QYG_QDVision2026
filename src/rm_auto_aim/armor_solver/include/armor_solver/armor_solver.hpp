@@ -191,6 +191,8 @@ private:
                   const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;
+    bool use_acceleration_mpc_ = false;
+    double mpc_max_acceleration_ = 0.0;
     double feedback_timeout_ = 0.1;
     double target_timeout_ = 0.3;
 

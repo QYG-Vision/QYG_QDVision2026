@@ -48,7 +48,8 @@
       # V2 直发参考配置，修改后重启节点。
       mpc:
         enabled: true
-        mode: direct
+        mode: direct  # acceleration 启用有界角加速度规划
+        max_acceleration_deg_s2: 0.0  # acceleration 模式须设为电控允许的正值
         feedback_timeout: 0.1
         target_timeout: 0.3
 

@@ -83,8 +83,14 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
 
     mpc_enabled_ = node->declare_parameter("solver.mpc.enabled", true);
     const auto mode = node->declare_parameter<std::string>("solver.mpc.mode", "direct");
-    if (mode != "direct") {
-        throw std::invalid_argument("solver.mpc.mode must be direct");
+    if (mode != "direct" && mode != "acceleration") {
+        throw std::invalid_argument("solver.mpc.mode must be direct or acceleration");
+    }
+    use_acceleration_mpc_ = mode == "acceleration";
+    mpc_max_acceleration_ = node->declare_parameter("solver.mpc.max_acceleration_deg_s2", 0.0);
+    if (use_acceleration_mpc_
+        && (!std::isfinite(mpc_max_acceleration_) || mpc_max_acceleration_ <= 0.0)) {
+        throw std::invalid_argument("acceleration mode requires positive max_acceleration_deg_s2");
     }
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
