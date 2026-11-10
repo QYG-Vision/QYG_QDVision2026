@@ -19,7 +19,6 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
-#include <stdexcept>
 
 namespace qd::auto_aim {
 Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
@@ -82,18 +81,22 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
         angle = angle * M_PI / 180.; // 转弧度制
 
     mpc_enabled_ = node->declare_parameter("solver.mpc.enabled", true);
-    const auto mode = node->declare_parameter<std::string>("solver.mpc.mode", "direct");
-    if (mode != "direct" && mode != "acceleration") {
-        throw std::invalid_argument("solver.mpc.mode must be direct or acceleration");
-    }
-    use_acceleration_mpc_ = mode == "acceleration";
-    mpc_max_acceleration_ = node->declare_parameter("solver.mpc.max_acceleration_deg_s2", 0.0);
-    if (use_acceleration_mpc_
-        && (!std::isfinite(mpc_max_acceleration_) || mpc_max_acceleration_ <= 0.0)) {
-        throw std::invalid_argument("acceleration mode requires positive max_acceleration_deg_s2");
-    }
+    mpc_config_.horizon = node->declare_parameter("solver.mpc.horizon", 100);
+    mpc_config_.dt = node->declare_parameter("solver.mpc.dt", 0.01);
+    mpc_config_.position_weight = node->declare_parameter("solver.mpc.position_weight", 9e6);
+    mpc_config_.velocity_weight = node->declare_parameter("solver.mpc.velocity_weight", 0.0);
+    mpc_config_.acceleration_weight =
+        node->declare_parameter("solver.mpc.acceleration_weight", 1.0);
+    mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 10);
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
+    mpc_config_.max_acceleration =
+        node->declare_parameter("solver.mpc.yaw.max_acceleration", 2864.7889756541163);
+    yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
+    auto pitch_config = mpc_config_;
+    pitch_config.max_acceleration =
+        node->declare_parameter("solver.mpc.pitch.max_acceleration", 5729.5779513082325);
+    pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
 
     node.reset();
 
@@ -204,7 +207,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
 
     // Initialize gimbal_cmd
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
-    gimbal_cmd.reference_valid = false; // 直发参考通过检查后才置有效
+    gimbal_cmd.reference_valid = false; // 只有两轴优化完成后才置有效
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
     auto send_ypd = target_aim.aim_ypd;

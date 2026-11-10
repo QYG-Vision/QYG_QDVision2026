@@ -59,7 +59,7 @@ TEST_F(SolverMotionSwitches, requiresFeedbackThenPublishesCompleteReference) {
     solver_->update_feedback(feedback_);
     command = solve();
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_EQ(command.reference_status, "valid_direct");
+    EXPECT_EQ(command.reference_status, "valid_mpc");
     EXPECT_NEAR(command.yaw, 0, 1e-8);
     EXPECT_NEAR(command.pitch, 0, 1e-8);
     EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-8);
@@ -67,7 +67,7 @@ TEST_F(SolverMotionSwitches, requiresFeedbackThenPublishesCompleteReference) {
     EXPECT_EQ(command.target_v_yaw, 0);
 }
 
-TEST_F(SolverMotionSwitches, plansBallisticPitchWithoutDerivativeFeedforward) {
+TEST_F(SolverMotionSwitches, plansBallisticPitchWithMpcReference) {
     node_->set_parameter(rclcpp::Parameter("solver.use_ballistic_compensation", true));
     solver_->update_bullet_speed(16);
     solver_->update_feedback(feedback_);
@@ -75,11 +75,11 @@ TEST_F(SolverMotionSwitches, plansBallisticPitchWithoutDerivativeFeedforward) {
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
     EXPECT_LT(command.exp_pitch, 0);
     EXPECT_LT(command.pitch, 0);
-    EXPECT_DOUBLE_EQ(command.pitch_vel_deg_s, 0);
-    EXPECT_DOUBLE_EQ(command.pitch_acc_deg_s2, 0);
+    EXPECT_NEAR(command.pitch_vel_deg_s, 0, 1e-5);
+    EXPECT_NEAR(command.pitch_acc_deg_s2, 0, 1e-5);
 }
 
-TEST_F(SolverMotionSwitches, targetSwitchSendsNewAngleWithZeroFeedforward) {
+TEST_F(SolverMotionSwitches, targetSwitchReplansTheReference) {
     solver_->update_feedback(feedback_);
     target_.position_armor.y = 1;
     const auto left = solve();
@@ -89,8 +89,8 @@ TEST_F(SolverMotionSwitches, targetSwitchSendsNewAngleWithZeroFeedforward) {
     const auto right = solve();
     ASSERT_TRUE(right.reference_valid) << right.reference_status;
     EXPECT_LT(right.yaw, 0);
-    EXPECT_DOUBLE_EQ(right.yaw_acc_deg_s2, 0);
-    EXPECT_DOUBLE_EQ(right.yaw_vel_deg_s, 0);
+    EXPECT_NEAR(right.yaw_acc_deg_s2, 0, 1e-5);
+    EXPECT_NEAR(right.yaw_vel_deg_s, 0, 1e-5);
 }
 
 TEST_F(SolverMotionSwitches, repeatsDoNotRenewFeedbackAndStaleTargetIsRejected) {
@@ -124,15 +124,15 @@ TEST_F(SolverMotionSwitches, rejectsEnergyModeAndFrameMismatch) {
     EXPECT_EQ(command.reference_status, "frame_mismatch");
     EXPECT_FALSE(command.reference_valid);
 }
-TEST_F(SolverMotionSwitches, publishesValidDirectReference) {
+TEST_F(SolverMotionSwitches, publishesValidMpcReference) {
     solver_->update_feedback(feedback_);
     target_.position_armor.y = 1;
     const auto command = solve();
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_EQ(command.reference_status, "valid_direct");
+    EXPECT_EQ(command.reference_status, "valid_mpc");
     EXPECT_GT(command.yaw, 1.0);
-    EXPECT_DOUBLE_EQ(command.yaw_vel_deg_s, 0);
-    EXPECT_DOUBLE_EQ(command.yaw_acc_deg_s2, 0);
+    EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-5);
+    EXPECT_NEAR(command.yaw_acc_deg_s2, 0, 1e-5);
     EXPECT_FALSE(command.fire_advice);
 }
 } // namespace qd::auto_aim

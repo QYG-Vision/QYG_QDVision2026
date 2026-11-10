@@ -161,7 +161,7 @@ int tiny_set_bound_constraints(TinySolver* solver,
     solver->work->u_min = u_min;
     solver->work->u_max = u_max;
 
-    return 0;
+    return status;
 }
 
 int tiny_set_cone_constraints(TinySolver* solver,
@@ -394,7 +394,7 @@ int tiny_set_x_ref(TinySolver* solver, tinyMatrix x_ref) {
     status |= check_dimension("State reference trajectory (x_ref)", "rows", x_ref.rows(), solver->work->nx);
     status |= check_dimension("State reference trajectory (x_ref)", "columns", x_ref.cols(), solver->work->N);
     solver->work->Xref = x_ref;
-    return 0;
+    return status;
 }
 
 int tiny_set_u_ref(TinySolver* solver, tinyMatrix u_ref) {
@@ -406,7 +406,7 @@ int tiny_set_u_ref(TinySolver* solver, tinyMatrix u_ref) {
     status |= check_dimension("Control/input reference trajectory (u_ref)", "rows", u_ref.rows(), solver->work->nu);
     status |= check_dimension("Control/input reference trajectory (u_ref)", "columns",u_ref.cols(), solver->work->N-1);
     solver->work->Uref = u_ref;
-    return 0;
+    return status;
 }
 
 void tiny_initialize_sensitivity_matrices(TinySolver *solver) {

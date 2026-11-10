@@ -45,13 +45,21 @@
         max_steps: 8000
         hit_distance_threshold: 0.02
 
-      # V2 直发参考配置，修改后重启节点。
+      # 与同济 Planner 对齐：10 ms 步长、100 点窗口，输出窗口中点。
       mpc:
         enabled: true
-        mode: direct  # acceleration 启用有界角加速度规划
-        max_acceleration_deg_s2: 0.0  # acceleration 模式须设为电控允许的正值
-        feedback_timeout: 0.1
-        target_timeout: 0.3
+        horizon: 100
+        dt: 0.01
+        position_weight: 9000000.0
+        velocity_weight: 0.0
+        acceleration_weight: 1.0
+        max_iterations: 10
+        feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
+        target_timeout: 0.3         # 图像目标年龄上限 s
+        yaw:
+          max_acceleration: 2864.788976  # degree/s²，对应同济 50 rad/s²
+        pitch:
+          max_acceleration: 5729.577951  # degree/s²，对应同济 100 rad/s²
 
       # max_out_error 是开火误差，1最大，是整块小装甲板大小
       # max_orientation_angle 是击打装甲板最大角度
