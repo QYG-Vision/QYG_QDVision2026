@@ -108,6 +108,10 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
         "armor_solver/ballistic_debug",
         rclcpp::SensorDataQoS()
     );
+    mpc_debug_pub_ = this->create_publisher<rm_interfaces::msg::MpcDebug>(
+        "armor_solver/mpc_debug", rclcpp::SensorDataQoS()
+    );
+
     result_img_pub_ = image_transport::create_publisher(this, "armor_solver/result_img");
     result_image_publish_thread_ = std::thread(&ArmorSolverNode::resultImagePublishLoop, this);
 
@@ -219,6 +223,34 @@ void ArmorSolverNode::timerCallback() {
 
             if (!control_msg.reference_valid) {
                 control_msg.header.stamp = solve_start_time;
+            }
+
+            const auto publish_mpc_debug = [&](const char* axis, const AxisMpc::Debug& debug) {
+                rm_interfaces::msg::MpcDebug msg;
+                msg.header = control_msg.header;
+                msg.header.stamp = solve_start_time;
+                msg.target_id = control_msg.id;
+                msg.axis = axis;
+                msg.stage = debug.stage;
+                msg.status = debug.status;
+                msg.iterations = debug.iterations;
+                msg.x_finite = debug.x_finite;
+                msg.u_finite = debug.u_finite;
+                msg.max_iterations = debug.max_iterations;
+                msg.max_acceleration_deg_s2 = debug.max_acceleration_deg_s2;
+                msg.max_abs_reference_second_diff_deg = debug.max_abs_reference_second_diff_deg;
+                msg.second_diff_peak_index = debug.second_diff_peak_index;
+                msg.primal_residual_state = debug.primal_residual_state;
+                msg.primal_residual_input = debug.primal_residual_input;
+                msg.dual_residual_state = debug.dual_residual_state;
+                msg.dual_residual_input = debug.dual_residual_input;
+                mpc_debug_pub_->publish(msg);
+            };
+            if (const auto& debug = solver_->yaw_mpc_debug()) {
+                publish_mpc_debug("yaw", *debug);
+            }
+            if (const auto& debug = solver_->pitch_mpc_debug()) {
+                publish_mpc_debug("pitch", *debug);
             }
 
             if (const auto debug = solver_->get_ballistic_debug()) {

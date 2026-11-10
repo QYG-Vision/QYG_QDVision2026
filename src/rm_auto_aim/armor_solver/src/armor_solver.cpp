@@ -117,6 +117,8 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     std::shared_ptr<tf2_ros::Buffer> tf2_buffer_
 ) {
     ballistic_debug_.reset();
+    yaw_mpc_debug_.reset();
+    pitch_mpc_debug_.reset();
     // Get newest parameters
     // 更新参数
     try {

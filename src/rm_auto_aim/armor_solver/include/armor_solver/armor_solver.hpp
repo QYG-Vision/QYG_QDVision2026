@@ -155,6 +155,8 @@ public:
      * @return 有效瞄准结果的角度数据；无有效结果时为空。
      */
     std::optional<BallisticDebugData> get_ballistic_debug() const noexcept;
+    const auto& yaw_mpc_debug() const noexcept { return yaw_mpc_debug_; }
+    const auto& pitch_mpc_debug() const noexcept { return pitch_mpc_debug_; }
 
     /**
      * @brief 接收一条新的弹速样本并更新弹道模型。
@@ -313,6 +315,8 @@ private:
     bool use_armor_top_ = false;
     bool use_ballistic_compensation_ = true;
     std::optional<BallisticDebugData> ballistic_debug_;
+    std::optional<AxisMpc::Debug> yaw_mpc_debug_;
+    std::optional<AxisMpc::Debug> pitch_mpc_debug_;
 };
 
 } // namespace qd::auto_aim

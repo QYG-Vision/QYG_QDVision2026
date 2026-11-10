@@ -107,11 +107,11 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
     if (!std::isfinite(command_distance) || command_distance < 0.01) {
         return reject("invalid_target");
     }
-    const auto yaw_plan = yaw_mpc_->plan(yaw_reference);
+    const auto yaw_plan = yaw_mpc_->plan(yaw_reference, &yaw_mpc_debug_.emplace());
     if (!yaw_plan) {
         return reject("yaw_mpc_failed");
     }
-    const auto pitch_plan = pitch_mpc_->plan(pitch_reference);
+    const auto pitch_plan = pitch_mpc_->plan(pitch_reference, &pitch_mpc_debug_.emplace());
     if (!pitch_plan) {
         return reject("pitch_mpc_failed");
     }
