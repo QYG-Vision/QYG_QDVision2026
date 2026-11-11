@@ -56,29 +56,6 @@ struct BallisticDebugData {
     bool ballistic_success = false;
 };
 
-/** @brief 上游决策生成的同一时间窗口参考；角度为 degree，时间为 s。 */
-struct AimReference {
-    std_msgs::msg::Header header;
-    bool valid = false;
-    std::string status = "invalid_reference";
-    double dt = 0.01;
-    int output_index = 0;
-    std::vector<double> yaw;
-    std::vector<double> pitch;
-    std::vector<int32_t> armor_indices;
-    std::vector<uint8_t> fire_allowed;
-    std::vector<double> wait_durations;
-    int current_armor_index = -1;
-    int next_armor_index = -1;
-    double time_to_switch = -1.0;
-    double distance = -1.0;
-    bool suggest_fire = false;
-    State current_state = State::Zero();
-    YpdCoord current_aim{};
-    YpdCoord current_velocity{};
-    std::optional<BallisticDebugData> current_ballistic;
-};
-
 struct ShootState {
     double yaw;
     double pitch;
@@ -114,7 +91,7 @@ struct AimResult {
 // ros消息转换类
 struct RosTarget {
 public:
-    explicit RosTarget(const rm_interfaces::msg::Target& target_msg) {
+    explicit RosTarget(rm_interfaces::msg::Target& target_msg) {
         tracking_ = target_msg.tracking;
         id_ = target_msg.id;
         armors_num_ = target_msg.armors_num;
@@ -178,8 +155,6 @@ public:
      * @return 有效瞄准结果的角度数据；无有效结果时为空。
      */
     std::optional<BallisticDebugData> get_ballistic_debug() const noexcept;
-    const auto& yaw_mpc_debug() const noexcept { return yaw_mpc_debug_; }
-    const auto& pitch_mpc_debug() const noexcept { return pitch_mpc_debug_; }
 
     /**
      * @brief 接收一条新的弹速样本并更新弹道模型。
@@ -204,33 +179,17 @@ public:
 
     int get_top_level() const;
 
-    /** @brief 返回本轮上游参考及选板安排，用于调试；调用方持有求解器锁。 */
-    const AimReference& aim_reference() const noexcept { return aim_reference_; }
-
 private:
     /**
-     * @brief 在上游统一选择追板或等板，并生成完整的带时间参考。
-     * @param target 图像时刻的整车或平移模型，odom 中的 m、rad。
-     * @param now 本轮 ROS 时间，必须与 target 时间戳使用相同时钟。
-     * @return 参考和决策诊断；失败时 valid=false 并说明原因。
+     * @brief 从同一块装甲板的未来弹道角生成有限时域参考并求解两轴 MPC。
+     * @param aim 当前选板结果及图像时刻的运动状态。
+     * @param target 当前跟踪目标，包含坐标系和采样时间。
+     * @param now 本轮求解的 ROS 时间。
+     * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
+     * @return 反馈新鲜、弹道及两轴优化均成功时返回 true。
      */
-    AimReference build_aim_reference(const rm_interfaces::msg::Target& target,
-                                     const rclcpp::Time& now);
-    /**
-     * @brief 仅求解上游给定的参考，不选择目标或决定开火。
-     * @param reference 上游生成的完整角度参考，degree，窗口中点对应本轮规划时刻。
-     * @param now 本轮 ROS 时间，用于反馈和目标新鲜度检查。
-     * @param command 写入规划角度、运动量和有效状态。
-     * @return 两轴求解及输入检查均成功时返回 true。
-     */
-    bool plan_mpc(const AimReference& reference, const rclcpp::Time& now,
-                  rm_interfaces::msg::GimbalCmd& command);
-    AimReference aim_reference_;
-    std::optional<State> last_decision_state_;
-    bool last_decision_waiting_ = false;
-    rclcpp::Time last_decision_stamp_{0, 0, RCL_ROS_TIME};
-    std::string last_decision_id_;
-    std::string last_decision_frame_;
+    bool plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& target,
+                  const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
     std::unique_ptr<AxisMpc> yaw_mpc_;
     std::unique_ptr<AxisMpc> pitch_mpc_;
     AxisMpc::Config mpc_config_;
@@ -354,8 +313,6 @@ private:
     bool use_armor_top_ = false;
     bool use_ballistic_compensation_ = true;
     std::optional<BallisticDebugData> ballistic_debug_;
-    std::optional<AxisMpc::Debug> yaw_mpc_debug_;
-    std::optional<AxisMpc::Debug> pitch_mpc_debug_;
 };
 
 } // namespace qd::auto_aim

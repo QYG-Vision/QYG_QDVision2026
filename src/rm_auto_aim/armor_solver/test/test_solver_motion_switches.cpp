@@ -1,4 +1,3 @@
-#include <limits>
 #include <memory>
 
 #include "armor_solver/armor_solver.hpp"
@@ -18,7 +17,6 @@ protected:
         rclcpp::NodeOptions options;
         options.parameter_overrides({
             rclcpp::Parameter("solver.use_armor_top", true),
-            rclcpp::Parameter("solver.top1.max_orientation_angle", 30.0),
             rclcpp::Parameter("solver.use_ballistic_compensation", false),
             rclcpp::Parameter("solver.compensator_type", "ideal")});
         node_ = std::make_shared<rclcpp::Node>("solver_mpc_test", options);
@@ -136,58 +134,5 @@ TEST_F(SolverMotionSwitches, publishesValidMpcReference) {
     EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-5);
     EXPECT_NEAR(command.yaw_acc_deg_s2, 0, 1e-5);
     EXPECT_FALSE(command.fire_advice);
-}
-// 几何决策在上游完成，下游应严格消费同一条参考，不能重新选择板。
-TEST_F(SolverMotionSwitches, upstreamReferenceContainsNextPlateAndDrivesMpc) {
-    target_.yaw = 0.2;
-    target_.v_yaw = 3.0;
-    solver_->update_feedback(feedback_);
-    const auto command = solve();
-    const auto& reference = solver_->aim_reference();
-    ASSERT_TRUE(reference.valid) << reference.status;
-    EXPECT_EQ(reference.current_armor_index, 0);
-    EXPECT_EQ(reference.next_armor_index, 3);
-    EXPECT_GT(reference.time_to_switch, 0.0);
-    EXPECT_LT(reference.time_to_switch, 0.5);
-    ASSERT_EQ(reference.yaw.size(), 100u);
-    EXPECT_TRUE(reference.fire_allowed[reference.output_index]);
-    bool has_wait = false;
-    for (size_t k = reference.output_index + 1; k < reference.yaw.size(); ++k) {
-        has_wait = has_wait || !reference.fire_allowed[k];
-    }
-    EXPECT_TRUE(has_wait);
-    ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    AxisMpc expected_mpc(AxisMpc::Config{});
-    const auto expected = expected_mpc.plan(reference.yaw);
-    ASSERT_TRUE(expected);
-    EXPECT_NEAR(command.yaw, expected->position, 1e-5);
-    EXPECT_NEAR(command.yaw_vel_deg_s, expected->velocity, 1e-4);
-    EXPECT_NEAR(command.yaw_acc_deg_s2, expected->acceleration, 1e-3);
-    EXPECT_NEAR(command.exp_yaw, reference.yaw[reference.output_index], 1e-5);
-    EXPECT_FALSE(command.fire_advice);
-}
-
-TEST_F(SolverMotionSwitches, waitingReferenceCannotAdviseFire) {
-    target_.yaw = 0.7;
-    target_.v_yaw = 3.0;
-    solver_->update_feedback(feedback_);
-    const auto command = solve();
-    const auto& reference = solver_->aim_reference();
-    ASSERT_TRUE(reference.valid) << reference.status;
-    EXPECT_EQ(reference.current_armor_index, 3);
-    EXPECT_FALSE(reference.fire_allowed[reference.output_index]);
-    EXPECT_GT(reference.wait_durations[reference.output_index], 0.0);
-    EXPECT_FALSE(reference.suggest_fire);
-    EXPECT_FALSE(command.fire_advice);
-}
-
-TEST_F(SolverMotionSwitches, rotatingRejectsIncompleteCandidateGeometry) {
-    target_.v_yaw = 3.0;
-    target_.radius_list.pop_back();
-    solver_->update_feedback(feedback_);
-    const auto command = solve();
-    EXPECT_FALSE(command.reference_valid);
-    EXPECT_FALSE(command.fire_advice);
-    EXPECT_EQ(command.reference_status, "invalid_target");
 }
 } // namespace qd::auto_aim

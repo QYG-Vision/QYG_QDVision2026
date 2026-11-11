@@ -52,15 +52,8 @@ AxisMpc::AxisMpc(const Config& config) : impl_(std::make_unique<Impl>(config)) {
 
 AxisMpc::~AxisMpc() = default;
 
-std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& reference,
-                                             Debug* debug) const {
+std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& reference) const {
     const auto& c = impl_->config;
-    if (debug) {
-        *debug = Debug{};
-        debug->max_iterations = c.max_iterations;
-        debug->max_acceleration_deg_s2 = c.max_acceleration;
-        debug->stage = impl_->valid ? "invalid_input" : "invalid_setup";
-    }
     if (!impl_->valid || reference.size() != static_cast<size_t>(c.horizon)
         || !std::all_of(reference.begin(), reference.end(), [](double x) {
             return std::isfinite(x);
@@ -72,20 +65,6 @@ std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& referenc
         const int right = k == c.horizon - 1 ? k : k + 1;
         w->Xref(0, k) = reference[k];
         w->Xref(1, k) = (reference[right] - reference[left]) / ((right - left) * c.dt);
-    }
-    if (debug) {
-        debug->max_abs_reference_second_diff_deg = 0.0;
-        debug->second_diff_peak_index = 1;
-        for (int k = 1; k < c.horizon - 1; ++k) {
-            const double delta = std::abs((reference[k + 1] - reference[k])
-                                          - (reference[k] - reference[k - 1]));
-            if (delta > debug->max_abs_reference_second_diff_deg) {
-                debug->max_abs_reference_second_diff_deg = delta;
-                debug->second_diff_peak_index = k;
-            }
-        }
-        debug->x_finite = w->x.allFinite();
-        debug->stage = "invalid_pre_solve_state";
     }
     if (!w->Xref.allFinite() || !w->x.allFinite()) return std::nullopt;
     w->u.setZero();
@@ -103,28 +82,13 @@ std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& referenc
     initial << w->Xref(0, 0), w->Xref(1, 0);
     tiny_set_x0(solver, initial);
     const int status = tiny_solve(solver);
-    const bool x_finite = w->x.allFinite();
-    const bool u_finite = w->u.allFinite();
-    if (debug) {
-        debug->status = status;
-        debug->iterations = solver->solution->iter;
-        debug->x_finite = x_finite;
-        debug->u_finite = u_finite;
-        debug->primal_residual_state = w->primal_residual_state;
-        debug->primal_residual_input = w->primal_residual_input;
-        debug->dual_residual_state = w->dual_residual_state;
-        debug->dual_residual_input = w->dual_residual_input;
-        debug->stage = "solve_failed";
-    }
-    if (status != 0 || !x_finite || !u_finite) return std::nullopt;
-    if (debug) debug->stage = "invalid_output";
+    if (status != 0 || !w->x.allFinite() || !w->u.allFinite()) return std::nullopt;
     const int output = c.horizon / 2;
     const Sample result{
         w->x(0, output), w->x(1, output),
         std::clamp(w->u(0, output), -c.max_acceleration, c.max_acceleration)};
     if (!std::isfinite(result.position) || !std::isfinite(result.velocity)
         || !std::isfinite(result.acceleration)) return std::nullopt;
-    if (debug) debug->stage = "valid";
     return result;
 }
 } // namespace qd::auto_aim

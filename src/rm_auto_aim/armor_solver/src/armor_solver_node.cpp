@@ -63,13 +63,6 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
     FYT_INFO("armor_solver", "Starting ArmorSolverNode!");
 
     debug_mode_ = this->declare_parameter("debug", true);
-    mpc_debug_rate_hz_ = this->declare_parameter("mpc_debug_rate_hz", 5.0);
-    mpc_debug_reference_arrays_ =
-        this->declare_parameter("mpc_debug_reference_arrays", false);
-    if (!std::isfinite(mpc_debug_rate_hz_) || mpc_debug_rate_hz_ < 0.0) {
-        RCLCPP_WARN(this->get_logger(), "Invalid mpc_debug_rate_hz; using 5 Hz");
-        mpc_debug_rate_hz_ = 5.0;
-    }
 
     // Tracker 初始化参数
     double max_match_distance = this->declare_parameter("tracker.max_match_distance", 0.2);
@@ -115,10 +108,6 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
         "armor_solver/ballistic_debug",
         rclcpp::SensorDataQoS()
     );
-    mpc_debug_pub_ = this->create_publisher<rm_interfaces::msg::MpcDebug>(
-        "armor_solver/mpc_debug", rclcpp::SensorDataQoS()
-    );
-
     result_img_pub_ = image_transport::create_publisher(this, "armor_solver/result_img");
     result_image_publish_thread_ = std::thread(&ArmorSolverNode::resultImagePublishLoop, this);
 
@@ -230,75 +219,6 @@ void ArmorSolverNode::timerCallback() {
 
             if (!control_msg.reference_valid) {
                 control_msg.header.stamp = solve_start_time;
-            }
-
-            const auto diagnostic_time = std::chrono::steady_clock::now();
-            // 失败诊断不依赖 Foxglove，最多每秒一行，避免旋转靶失败时刷屏。
-            if (!control_msg.reference_valid
-                && diagnostic_time - last_solver_failure_log_ >= std::chrono::seconds(1)) {
-                last_solver_failure_log_ = diagnostic_time;
-                const auto yaw = solver_->yaw_mpc_debug().value_or(AxisMpc::Debug{});
-                const auto pitch = solver_->pitch_mpc_debug().value_or(AxisMpc::Debug{});
-                const auto& reference = solver_->aim_reference();
-                const double solve_ms = (this->now() - solve_start_time).seconds() * 1e3;
-                RCLCPP_WARN(this->get_logger(),
-                    "Aim invalid: reason=%s ref=%s plate=%d next=%d switch=%.3fs "
-                    "yaw[stage=%s status=%d iter=%d/%d finite=%d/%d "
-                    "d2=%.3g pri_u=%.3g dual_u=%.3g] "
-                    "pitch[stage=%s status=%d iter=%d/%d] solve=%.2fms",
-                    control_msg.reference_status.c_str(), reference.status.c_str(),
-                    reference.current_armor_index, reference.next_armor_index,
-                    reference.time_to_switch, yaw.stage, yaw.status, yaw.iterations,
-                    yaw.max_iterations, static_cast<int>(yaw.x_finite),
-                    static_cast<int>(yaw.u_finite), yaw.max_abs_reference_second_diff_deg,
-                    yaw.primal_residual_input, yaw.dual_residual_input,
-                    solver_->pitch_mpc_debug() ? pitch.stage : "not_run", pitch.status,
-                    pitch.iterations, pitch.max_iterations, solve_ms);
-            }
-            if (mpc_debug_rate_hz_ > 0.0 && mpc_debug_pub_->get_subscription_count() > 0
-                && diagnostic_time - last_mpc_debug_publish_
-                    >= std::chrono::duration<double>(1.0 / mpc_debug_rate_hz_)) {
-                last_mpc_debug_publish_ = diagnostic_time;
-                const auto publish_mpc_debug = [&](const char* axis, const AxisMpc::Debug& debug) {
-                    rm_interfaces::msg::MpcDebug msg;
-                    msg.header = control_msg.header;
-                    msg.header.stamp = solve_start_time;
-                    msg.target_id = control_msg.id;
-                    const auto& reference = solver_->aim_reference();
-                    msg.reference_valid = reference.valid;
-                    msg.reference_status = reference.status;
-                    msg.reference_dt = reference.dt;
-                    msg.reference_output_index = reference.output_index;
-                    msg.current_armor_index = reference.current_armor_index;
-                    msg.next_armor_index = reference.next_armor_index;
-                    msg.time_to_switch_s = reference.time_to_switch;
-                    if (mpc_debug_reference_arrays_) {
-                        msg.reference_angles_deg = std::string(axis) == "yaw"
-                            ? reference.yaw : reference.pitch;
-                        msg.reference_armor_indices = reference.armor_indices;
-                        msg.reference_fire_allowed = reference.fire_allowed;
-                        msg.reference_wait_durations_s = reference.wait_durations;
-                    }
-                    msg.axis = axis;
-                    msg.stage = debug.stage;
-                    msg.status = debug.status;
-                    msg.iterations = debug.iterations;
-                    msg.x_finite = debug.x_finite;
-                    msg.u_finite = debug.u_finite;
-                    msg.max_iterations = debug.max_iterations;
-                    msg.max_acceleration_deg_s2 = debug.max_acceleration_deg_s2;
-                    msg.max_abs_reference_second_diff_deg = debug.max_abs_reference_second_diff_deg;
-                    msg.second_diff_peak_index = debug.second_diff_peak_index;
-                    msg.primal_residual_state = debug.primal_residual_state;
-                    msg.primal_residual_input = debug.primal_residual_input;
-                    msg.dual_residual_state = debug.dual_residual_state;
-                    msg.dual_residual_input = debug.dual_residual_input;
-                    mpc_debug_pub_->publish(msg);
-                };
-                AxisMpc::Debug skipped;
-                skipped.stage = "not_run";
-                publish_mpc_debug("yaw", solver_->yaw_mpc_debug().value_or(skipped));
-                publish_mpc_debug("pitch", solver_->pitch_mpc_debug().value_or(skipped));
             }
 
             if (const auto debug = solver_->get_ballistic_debug()) {

@@ -2,7 +2,6 @@
 #define ARMOR_SOLVER_AXIS_MPC_HPP_
 
 #include <memory>
-#include <limits>
 #include <optional>
 #include <vector>
 #include <cmath>
@@ -23,22 +22,7 @@ public:
         double position_weight = 9e6;
         double velocity_weight = 0.0;
         double acceleration_weight = 1.0;
-        int max_iterations = 100;
-    };
-    struct Debug {
-        const char* stage = "invalid_input";
-        int status = -1;
-        int iterations = 0;
-        bool x_finite = false;
-        bool u_finite = false;
-        int max_iterations = 0;
-        double max_acceleration_deg_s2 = 0.0;
-        double max_abs_reference_second_diff_deg = std::numeric_limits<double>::quiet_NaN();
-        int second_diff_peak_index = -1;
-        double primal_residual_state = std::numeric_limits<double>::quiet_NaN();
-        double primal_residual_input = std::numeric_limits<double>::quiet_NaN();
-        double dual_residual_state = std::numeric_limits<double>::quiet_NaN();
-        double dual_residual_input = std::numeric_limits<double>::quiet_NaN();
+        int max_iterations = 10;
     };
     struct Sample {
         double position;
@@ -58,7 +42,7 @@ public:
      * @return 收敛且满足约束的参考；非法输入或求解失败时为空。
      * @note 实例由求解线程独占，每次清空上一轮对偶状态以隔离目标切换。
      */
-    std::optional<Sample> plan(const std::vector<double>& reference, Debug* debug = nullptr) const;
+    std::optional<Sample> plan(const std::vector<double>& reference) const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;
