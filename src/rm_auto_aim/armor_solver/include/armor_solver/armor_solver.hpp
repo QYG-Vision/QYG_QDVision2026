@@ -91,7 +91,7 @@ struct AimResult {
 // ros消息转换类
 struct RosTarget {
 public:
-    explicit RosTarget(rm_interfaces::msg::Target& target_msg) {
+    explicit RosTarget(const rm_interfaces::msg::Target& target_msg) {
         tracking_ = target_msg.tracking;
         id_ = target_msg.id;
         armors_num_ = target_msg.armors_num;
@@ -183,7 +183,7 @@ public:
 
 private:
     /**
-     * @brief 从同一块装甲板的未来弹道角生成有限时域参考并求解两轴 MPC。
+     * @brief 从整车候选板生成有限时域参考并求解两轴 MPC，平移模式沿用单板。
      * @param aim 当前选板结果及图像时刻的运动状态。
      * @param target 当前跟踪目标，包含坐标系和采样时间。
      * @param now 本轮求解的 ROS 时间。

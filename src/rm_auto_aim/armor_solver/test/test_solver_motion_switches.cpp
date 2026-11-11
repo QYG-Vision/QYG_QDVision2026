@@ -1,3 +1,4 @@
+#include <limits>
 #include <memory>
 
 #include "armor_solver/armor_solver.hpp"
@@ -134,5 +135,63 @@ TEST_F(SolverMotionSwitches, publishesValidMpcReference) {
     EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-5);
     EXPECT_NEAR(command.yaw_acc_deg_s2, 0, 1e-5);
     EXPECT_FALSE(command.fire_advice);
+}
+// 不提供弹速样本，飞行时间为零，使期望轨迹可直接由几何关系独立计算。
+TEST_F(SolverMotionSwitches, rotatingReferenceIncludesNextArmorWithinHorizon) {
+    target_.yaw = 0.5;
+    target_.v_yaw = 3.0;
+    solver_->update_feedback(feedback_);
+    const auto command = solve();
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
+
+    AxisMpc::Config config;
+    AxisMpc expected_mpc(config);
+    std::vector<double> reference;
+    std::vector<double> frozen_reference;
+    int first_selected = -1;
+    bool switched = false;
+    for (int k = 0; k < config.horizon; ++k) {
+        double nearest = std::numeric_limits<double>::infinity();
+        double selected_yaw = 0.0;
+        int selected = -1;
+        for (int i = 0; i < 4; ++i) {
+            const double phase = target_.yaw
+                + target_.v_yaw * (k - config.horizon / 2) * config.dt + i * M_PI / 2;
+            const double x = target_.position.x - 0.2 * std::cos(phase);
+            const double y = -0.2 * std::sin(phase);
+            if (x * x + y * y < nearest) {
+                nearest = x * x + y * y;
+                selected_yaw = std::atan2(y, x) * 180 / M_PI;
+                selected = i;
+            }
+        }
+        if (k == 0) first_selected = selected;
+        switched = switched || selected != first_selected;
+        reference.push_back(selected_yaw);
+        const double phase = target_.yaw + target_.v_yaw * (k - config.horizon / 2) * config.dt;
+        frozen_reference.push_back(std::atan2(-0.2 * std::sin(phase),
+            target_.position.x - 0.2 * std::cos(phase)) * 180 / M_PI);
+    }
+    ASSERT_TRUE(switched);
+    const auto expected = expected_mpc.plan(reference);
+    const auto frozen = expected_mpc.plan(frozen_reference);
+    ASSERT_TRUE(expected);
+    ASSERT_TRUE(frozen);
+    EXPECT_NEAR(command.yaw, expected->position, 1e-5);
+    EXPECT_GT(std::abs(command.yaw - frozen->position), 1e-3);
+    EXPECT_NEAR(command.yaw_vel_deg_s, expected->velocity, 1e-4);
+    EXPECT_NEAR(command.yaw_acc_deg_s2, expected->acceleration, 1e-3);
+    EXPECT_NEAR(command.exp_yaw, reference[config.horizon / 2], 1e-5);
+    EXPECT_FALSE(command.fire_advice);
+}
+
+TEST_F(SolverMotionSwitches, rotatingRejectsIncompleteCandidateGeometry) {
+    target_.v_yaw = 3.0;
+    target_.radius_list.pop_back();
+    solver_->update_feedback(feedback_);
+    const auto command = solve();
+    EXPECT_FALSE(command.reference_valid);
+    EXPECT_FALSE(command.fire_advice);
+    EXPECT_EQ(command.reference_status, "invalid_target");
 }
 } // namespace qd::auto_aim

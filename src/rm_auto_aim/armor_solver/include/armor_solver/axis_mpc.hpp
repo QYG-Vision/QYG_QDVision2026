@@ -23,7 +23,7 @@ public:
         double position_weight = 9e6;
         double velocity_weight = 0.0;
         double acceleration_weight = 1.0;
-        int max_iterations = 10;
+        int max_iterations = 100;
     };
     struct Debug {
         const char* stage = "invalid_input";

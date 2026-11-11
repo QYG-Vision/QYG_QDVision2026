@@ -87,7 +87,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     mpc_config_.velocity_weight = node->declare_parameter("solver.mpc.velocity_weight", 0.0);
     mpc_config_.acceleration_weight =
         node->declare_parameter("solver.mpc.acceleration_weight", 1.0);
-    mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 10);
+    mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 100);
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
     mpc_config_.max_acceleration =

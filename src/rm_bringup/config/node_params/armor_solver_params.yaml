@@ -53,7 +53,7 @@
         position_weight: 9000000.0
         velocity_weight: 0.0
         acceleration_weight: 1.0
-        max_iterations: 10
+        max_iterations: 100       # 换板轨迹需要更多迭代；达到收敛条件时提前结束
         feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
         target_timeout: 0.3         # 图像目标年龄上限 s
         yaw:

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace qd::auto_aim {
 void Solver::update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback) {
@@ -67,6 +68,25 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
         return reject("invalid_target");
     }
 
+    // 平移模式沿用单板跟踪；整车模式为每个未来采样点重新选择候选板。
+    const bool use_candidates = top_level > 0 || !use_armor_top_;
+    std::vector<State> candidates;
+    if (use_candidates) {
+        if (target.armors_num <= 0
+            || static_cast<size_t>(target.armors_num) > target.radius_list.size()
+            || static_cast<size_t>(target.armors_num) > target.dz_list.size()) {
+            return reject("invalid_target");
+        }
+        candidates = get_armors_state(RosTarget(target));
+        for (const auto& state: candidates) {
+            if (!state.allFinite() || state[8] <= 0.0) {
+                return reject("invalid_target");
+            }
+        }
+    } else {
+        candidates.push_back(aim.planning_state);
+    }
+
     constexpr double RAD_TO_DEG = 180.0 / M_PI;
     std::vector<double> yaw_reference;
     std::vector<double> pitch_reference;
@@ -79,9 +99,32 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
     for (int k = 0; k < mpc_config_.horizon; ++k) {
         const double lead = (k - half_horizon) * mpc_config_.dt
             + additional_prediction_time;
-        auto hit_state = solve_impact_state(aim.planning_state,
-                                             target_age + predict2send_delay_ + lead);
-        hit_state = state_predict(hit_state, std::max(0.0, aim.wait_duration - lead));
+        const double delay = target_age + predict2send_delay_ + lead;
+        State hit_state = candidates.front();
+        size_t selected = 0;
+        double min_distance = std::numeric_limits<double>::infinity();
+        for (size_t i = 0; i < candidates.size(); ++i) {
+            // 先移动到窗口采样时刻，保留中点之前的负时间样本。
+            auto predicted = use_candidates
+                ? solve_impact_state(state_predict(candidates[i], lead),
+                                     target_age + predict2send_delay_)
+                : solve_impact_state(candidates[i], delay);
+            // 旧选板器的等待时间只属于旧选中的单板，不应用到整车候选序列。
+            if (!use_candidates) {
+                predicted = state_predict(predicted, std::max(0.0, aim.wait_duration - lead));
+            }
+            const auto candidate_point = state_to_armor_pos(predicted);
+            if (!candidate_point.allFinite() || candidate_point.norm() <= 0.0) {
+                return reject("invalid_prediction");
+            }
+            // 与济瞄一致：每个采样点选水平距离最近的板，允许时域内自然换板。
+            const double distance = candidate_point.head<2>().squaredNorm();
+            if (distance < min_distance) {
+                min_distance = distance;
+                selected = i;
+                hit_state = predicted;
+            }
+        }
         const auto point = state_to_armor_pos(hit_state);
         if (!point.allFinite() || point.norm() <= 0.0) {
             return reject("invalid_prediction");
@@ -102,6 +145,29 @@ bool Solver::plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& t
         pitch_reference.push_back(pitch);
         if (k == half_horizon) {
             command_distance = point.norm();
+            if (use_candidates) {
+                // 当前参考、弹道诊断和火控统一使用窗口中点选中的板。
+                command.exp_yaw = yaw;
+                command.exp_pitch = pitch;
+                ballistic_debug_ = result.ballistic_debug;
+                const auto aim_velocity = get_gimbal_ypd_v(
+                    point, state_to_armor_v(hit_state), gimbal_rpy_);
+                command.yaw_vel = aim_velocity.yaw * RAD_TO_DEG;
+                command.pitch_vel = -aim_velocity.pitch * RAD_TO_DEG;
+                const auto fire_state = solve_impact_state(candidates[selected],
+                                                           delay + controller_delay_);
+                const auto fire_result = target_pos_to_aim_ypd(state_to_armor_pos(fire_state));
+                if (use_ballistic_compensation_
+                    && (!fire_result.ballistic_debug
+                        || !fire_result.ballistic_debug->ballistic_success)) {
+                    return reject("ballistic_failed");
+                }
+                command.fire_advice = get_bullet_speed() > 0.0
+                    && isSuggestFire(result.aim_ypd, fire_result.aim_ypd, gimbal_rpy_,
+                                     max_out_error[top_level],
+                                     reduced_angle(hit_state[6] - gimbal_rpy_[2]),
+                                     pitch_inclined_) == ShootMode::SHOOT_NOW;
+            }
         }
     }
     if (!std::isfinite(command_distance) || command_distance < 0.01) {
