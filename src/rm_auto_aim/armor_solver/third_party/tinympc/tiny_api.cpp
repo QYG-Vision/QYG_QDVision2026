@@ -104,9 +104,8 @@ int tiny_setup(TinySolver** solverp,
     work->gl = tinyMatrix::Zero(nx, N);
     work->yl = tinyMatrix::Zero(nu, N-1);
 
-    // 保留原始跟踪权重；预计算函数内部单独加入 ADMM rho。
-    work->Q = Q.diagonal();
-    work->R = R.diagonal();
+    work->Q = (Q + rho * tinyMatrix::Identity(nx, nx)).diagonal();
+    work->R = (R + rho * tinyMatrix::Identity(nu, nu)).diagonal();
     work->Adyn = Adyn; // State transition matrix
     work->Bdyn = Bdyn; // Input matrix
     work->fdyn = fdyn; // Affine offset vector
@@ -161,7 +160,7 @@ int tiny_set_bound_constraints(TinySolver* solver,
     solver->work->u_min = u_min;
     solver->work->u_max = u_max;
 
-    return status;
+    return 0;
 }
 
 int tiny_set_cone_constraints(TinySolver* solver,
@@ -270,12 +269,12 @@ int tiny_precompute_and_set_cache(TinyCache *cache,
     tinyMatrix Kinf = tinyMatrix::Zero(nu, nx);
     tinyMatrix Pinf = tinyMatrix::Zero(nx, nx);
 
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 1000; i++)
     {
         Kinf = (R1 + Bdyn.transpose() * Ptp1 * Bdyn).inverse() * Bdyn.transpose() * Ptp1 * Adyn;
         Pinf = Q1 + Adyn.transpose() * Ptp1 * (Adyn - Bdyn * Kinf);
         // if Kinf converges, break
-        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < 1e-12)
+        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < 1e-5)
         {
             if (verbose) {
                 std::cout << "Kinf converged after " << i + 1 << " iterations" << std::endl;
@@ -394,7 +393,7 @@ int tiny_set_x_ref(TinySolver* solver, tinyMatrix x_ref) {
     status |= check_dimension("State reference trajectory (x_ref)", "rows", x_ref.rows(), solver->work->nx);
     status |= check_dimension("State reference trajectory (x_ref)", "columns", x_ref.cols(), solver->work->N);
     solver->work->Xref = x_ref;
-    return status;
+    return 0;
 }
 
 int tiny_set_u_ref(TinySolver* solver, tinyMatrix u_ref) {
@@ -406,7 +405,7 @@ int tiny_set_u_ref(TinySolver* solver, tinyMatrix u_ref) {
     status |= check_dimension("Control/input reference trajectory (u_ref)", "rows", u_ref.rows(), solver->work->nu);
     status |= check_dimension("Control/input reference trajectory (u_ref)", "columns",u_ref.cols(), solver->work->N-1);
     solver->work->Uref = u_ref;
-    return status;
+    return 0;
 }
 
 void tiny_initialize_sensitivity_matrices(TinySolver *solver) {

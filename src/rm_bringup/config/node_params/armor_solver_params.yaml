@@ -29,7 +29,7 @@
       lost_time_thres: 0.3
           
     solver:
-      use_armor_top: true            # 是否使用平移运动模型(armor_model),仅在 top0 时使用
+      use_armor_top: true            # 兼容旧参数；当前济瞄 MPC 路径统一使用整车候选板
       use_ballistic_compensation: true # 只切换发射 pitch；关闭时用几何角，飞行时间预测不变
       predict2send_delay: 0.17         # 从预测到串口发送的延迟
       controller_delay: 0.0           # 开火延迟
@@ -53,9 +53,10 @@
         position_weight: 9000000.0
         velocity_weight: 0.0
         acceleration_weight: 1.0
+        fire_thresh: 0.003          # 同济 Planner：第52点两轴规划误差范数，rad
         max_iterations: 10
-        feedback_timeout: 0.1       # 反馈采样年龄上限 s，重复快照不续期
-        target_timeout: 0.3         # 图像目标年龄上限 s
+        feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
+        target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
           max_acceleration: 2864.788976  # degree/s²，对应同济 50 rad/s²
         pitch:

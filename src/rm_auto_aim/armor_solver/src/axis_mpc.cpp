@@ -42,8 +42,8 @@ AxisMpc::AxisMpc(const Config& config) : impl_(std::make_unique<Impl>(config)) {
     tinyMatrix lower = tinyMatrix::Constant(2, c.horizon, -1e17);
     tinyMatrix upper = -lower;
     if (tiny_set_bound_constraints(solver, lower, upper,
-            tinyMatrix::Constant(1, c.horizon - 1, -c.max_acceleration),
-            tinyMatrix::Constant(1, c.horizon - 1, c.max_acceleration)) != 0) return;
+            tinyMatrix::Constant(1, c.horizon - 1, -c.max_acceleration * M_PI / 180.0),
+            tinyMatrix::Constant(1, c.horizon - 1, c.max_acceleration * M_PI / 180.0)) != 0) return;
     solver->settings->max_iter = c.max_iterations;
     impl_->valid = solver->cache->Pinf.allFinite() && solver->cache->Kinf.allFinite()
         && solver->cache->Quu_inv.allFinite() && lower.allFinite() && upper.allFinite()
@@ -52,44 +52,41 @@ AxisMpc::AxisMpc(const Config& config) : impl_(std::make_unique<Impl>(config)) {
 
 AxisMpc::~AxisMpc() = default;
 
-std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& reference) const {
+std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& reference,
+                                             const std::vector<double>* velocities) const {
     const auto& c = impl_->config;
     if (!impl_->valid || reference.size() != static_cast<size_t>(c.horizon)
         || !std::all_of(reference.begin(), reference.end(), [](double x) {
             return std::isfinite(x);
         })) return std::nullopt;
+    if (velocities && velocities->size() != reference.size()) return std::nullopt;
     auto* solver = impl_->solver;
     auto* w = solver->work;
     for (int k = 0; k < c.horizon; ++k) {
         const int left = k == 0 ? 0 : k - 1;
         const int right = k == c.horizon - 1 ? k : k + 1;
-        w->Xref(0, k) = reference[k];
-        w->Xref(1, k) = (reference[right] - reference[left]) / ((right - left) * c.dt);
+        w->Xref(0, k) = reference[k] * M_PI / 180.0;
+        const double velocity = velocities ? (*velocities)[k]
+            : (reference[right] - reference[left]) / ((right - left) * c.dt);
+        w->Xref(1, k) = velocity * M_PI / 180.0;
     }
     if (!w->Xref.allFinite() || !w->x.allFinite()) return std::nullopt;
-    w->u.setZero();
-    w->Uref.setZero();
-    w->v = w->x;
-    w->vnew = w->x;
-    w->z.setZero();
-    w->znew.setZero();
-    w->g.setZero();
-    w->y.setZero();
-    w->p.setZero();
-    w->d.setZero();
-    update_linear_cost(solver);
     tinyVector initial(2);
     initial << w->Xref(0, 0), w->Xref(1, 0);
     tiny_set_x0(solver, initial);
-    const int status = tiny_solve(solver);
-    if (status != 0 || !w->x.allFinite() || !w->u.allFinite()) return std::nullopt;
+    tiny_solve(solver);
+    if (!w->x.allFinite() || !w->u.allFinite()) return std::nullopt;
     const int output = c.horizon / 2;
-    const Sample result{
-        w->x(0, output), w->x(1, output),
-        std::clamp(w->u(0, output), -c.max_acceleration, c.max_acceleration)};
+    const Sample result = sample_at(output);
     if (!std::isfinite(result.position) || !std::isfinite(result.velocity)
         || !std::isfinite(result.acceleration)) return std::nullopt;
     return result;
+}
+AxisMpc::Sample AxisMpc::sample_at(int index) const {
+    const auto* w = impl_->solver->work;
+    constexpr double RAD_TO_DEG = 180.0 / M_PI;
+    return {w->x(0, index) * RAD_TO_DEG, w->x(1, index) * RAD_TO_DEG,
+            w->u(0, index) * RAD_TO_DEG};
 }
 } // namespace qd::auto_aim
 

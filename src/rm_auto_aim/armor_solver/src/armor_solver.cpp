@@ -88,6 +88,7 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     mpc_config_.acceleration_weight =
         node->declare_parameter("solver.mpc.acceleration_weight", 1.0);
     mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 10);
+    fire_thresh_ = node->declare_parameter("solver.mpc.fire_thresh", 0.003);
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
     mpc_config_.max_acceleration =
@@ -149,7 +150,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         gimbal_rpy_[1] = -gimbal_rpy_[1]; // 转成向上为正
     } catch (tf2::TransformException& ex) {
         FYT_ERROR("armor_solver", "{}", ex.what());
-        throw ex;
+        // 姿态只供可视化使用，不因缺少实际云台反馈阻断济瞄规划路径。
     }
 
     // 更新旋转状态
@@ -163,25 +164,18 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     }
 
     // 在访问模型数组之前验证所用输入，避免坏目标被送入选板器或规划器。
-    const bool armor_translation = get_top_level() == 0 && use_armor_top_;
     const auto finite_xyz = [](const auto& value) {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     };
     bool valid_target = target.tracking && std::isfinite(target.v_yaw)
-        && std::isfinite(target.yaw);
-    if (armor_translation) {
-        valid_target = valid_target && finite_xyz(target.position_armor)
-            && finite_xyz(target.velocity_armor);
-    } else {
-        valid_target = valid_target && finite_xyz(target.position) && finite_xyz(target.velocity)
-            && target.armors_num > 0
-            && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
-            && static_cast<size_t>(target.armors_num) <= target.dz_list.size();
-        if (valid_target) {
-            for (int i = 0; i < target.armors_num; ++i) {
-                valid_target = valid_target && std::isfinite(target.radius_list[i])
-                    && target.radius_list[i] > 0.0 && std::isfinite(target.dz_list[i]);
-            }
+        && std::isfinite(target.yaw) && finite_xyz(target.position) && finite_xyz(target.velocity)
+        && target.armors_num > 0
+        && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
+        && static_cast<size_t>(target.armors_num) <= target.dz_list.size();
+    if (valid_target) {
+        for (int i = 0; i < target.armors_num; ++i) {
+            valid_target = valid_target && std::isfinite(target.radius_list[i])
+                && target.radius_list[i] > 0.0 && std::isfinite(target.dz_list[i]);
         }
     }
     if (!valid_target) {
@@ -193,42 +187,13 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         return invalid;
     }
 
-    // 根据top_level选择决策
-    RosTarget target_msg(target);
-    ShootState target_aim;
-    if (get_top_level() > 0) {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    } else if (use_armor_top_) {
-        target_aim = get_aim_positon(target_msg, gimbal_rpy_);
-    } else {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    }
-    ballistic_debug_ = target_aim.ballistic_debug;
-
-    // Initialize gimbal_cmd
+    // 对齐济瞄 Planner：不进入旧追板、等板与火控链。
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
-    gimbal_cmd.reference_valid = false; // 只有两轴优化完成后才置有效
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
-    auto send_ypd = target_aim.aim_ypd;
-    auto send_ypd_v = target_aim.aim_ypd_v;
-    // 保存原始瞄准角供失败时诊断；有效发送角由 MPC 覆盖，不再额外叠加速度预测。
-    gimbal_cmd.yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
-    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
-    gimbal_cmd.distance = send_ypd.distance;
-    gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
-                             && target_aim.shoot == ShootMode::SHOOT_NOW;
-    // 以下信息主要用于调试和可视化
     gimbal_cmd.bullet_speed = get_bullet_speed();
-    gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
-    gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
     gimbal_cmd.target_v_yaw = target.v_yaw;
-
-    if (!plan_mpc(target_aim, target, current_time, gimbal_cmd)) {
+    if (!plan_mpc(target, current_time, gimbal_cmd)) {
         gimbal_cmd.reference_valid = false;
         gimbal_cmd.fire_advice = false;
     }

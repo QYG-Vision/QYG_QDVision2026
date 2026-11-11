@@ -52,87 +52,77 @@ protected:
     rm_interfaces::msg::SerialReceiveData feedback_;
 };
 
-TEST_F(SolverMotionSwitches, requiresFeedbackThenPublishesCompleteReference) {
-    auto command = solve();
-    EXPECT_FALSE(command.reference_valid);
-    EXPECT_EQ(command.reference_status, "no_feedback");
-    solver_->update_feedback(feedback_);
-    command = solve();
+TEST_F(SolverMotionSwitches, plansWithoutFeedback) {
+    const auto command = solve();
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_EQ(command.reference_status, "valid_mpc");
     EXPECT_NEAR(command.yaw, 0, 1e-8);
     EXPECT_NEAR(command.pitch, 0, 1e-8);
-    EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-8);
-    EXPECT_NEAR(command.pitch_acc_deg_s2, 0, 1e-8);
-    EXPECT_EQ(command.target_v_yaw, 0);
+    EXPECT_TRUE(command.fire_advice);
 }
 
-TEST_F(SolverMotionSwitches, plansBallisticPitchWithMpcReference) {
+TEST_F(SolverMotionSwitches, usesWholeTargetInsteadOfTranslationArmor) {
+    target_.position_armor.y = 100;
+    const auto command = solve();
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
+    EXPECT_NEAR(command.yaw, 0, 1e-8);
+}
+
+TEST_F(SolverMotionSwitches, feedbackAgeModeAndFrameDoNotGatePlanner) {
+    feedback_.mode = 2;
+    feedback_.header.frame_id = "other_frame";
+    solver_->update_feedback(feedback_);
+    now_ += rclcpp::Duration::from_seconds(0.4);
+    const auto command = solve();
+    EXPECT_TRUE(command.reference_valid) << command.reference_status;
+    EXPECT_TRUE(command.fire_advice);
+}
+
+TEST_F(SolverMotionSwitches, missingGimbalTransformDoesNotGatePlanner) {
+    buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
+    const auto command = solve();
+    EXPECT_TRUE(command.reference_valid) << command.reference_status;
+}
+
+TEST_F(SolverMotionSwitches, preservesBallisticCompensation) {
     node_->set_parameter(rclcpp::Parameter("solver.use_ballistic_compensation", true));
     solver_->update_bullet_speed(16);
-    solver_->update_feedback(feedback_);
     const auto command = solve();
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
     EXPECT_LT(command.exp_pitch, 0);
     EXPECT_LT(command.pitch, 0);
-    EXPECT_NEAR(command.pitch_vel_deg_s, 0, 1e-5);
-    EXPECT_NEAR(command.pitch_acc_deg_s2, 0, 1e-5);
 }
 
-TEST_F(SolverMotionSwitches, targetSwitchReplansTheReference) {
-    solver_->update_feedback(feedback_);
-    target_.position_armor.y = 1;
-    const auto left = solve();
-    ASSERT_TRUE(left.reference_valid) << left.reference_status;
-    EXPECT_GT(left.yaw, 0);
-    target_.position_armor.y = -1;
-    const auto right = solve();
-    ASSERT_TRUE(right.reference_valid) << right.reference_status;
-    EXPECT_LT(right.yaw, 0);
-    EXPECT_NEAR(right.yaw_acc_deg_s2, 0, 1e-5);
-    EXPECT_NEAR(right.yaw_vel_deg_s, 0, 1e-5);
-}
-
-TEST_F(SolverMotionSwitches, repeatsDoNotRenewFeedbackAndStaleTargetIsRejected) {
-    solver_->update_feedback(feedback_);
-    now_ += rclcpp::Duration::from_seconds(0.2);
-    target_.header.stamp = now_;
-    solver_->update_feedback(feedback_);
-    auto command = solve();
-    EXPECT_FALSE(command.reference_valid);
-    EXPECT_EQ(command.reference_status, "stale_feedback");
-    feedback_.header.stamp = now_;
-    solver_->update_feedback(feedback_);
-    ASSERT_TRUE(solve().reference_valid);
-    now_ += rclcpp::Duration::from_seconds(0.4);
-    feedback_.header.stamp = now_;
-    solver_->update_feedback(feedback_);
-    command = solve();
-    EXPECT_FALSE(command.reference_valid);
-    EXPECT_EQ(command.reference_status, "stale_target");
-    EXPECT_FALSE(command.fire_advice);
-}
-
-TEST_F(SolverMotionSwitches, rejectsEnergyModeAndFrameMismatch) {
-    feedback_.mode = 2;
-    solver_->update_feedback(feedback_);
-    EXPECT_EQ(solve().reference_status, "not_armor_mode");
-    feedback_.mode = 0;
-    feedback_.header.frame_id = "other_frame";
-    solver_->update_feedback(feedback_);
-    const auto command = solve();
-    EXPECT_EQ(command.reference_status, "frame_mismatch");
-    EXPECT_FALSE(command.reference_valid);
-}
-TEST_F(SolverMotionSwitches, publishesValidMpcReference) {
-    solver_->update_feedback(feedback_);
-    target_.position_armor.y = 1;
+TEST_F(SolverMotionSwitches, windowUsesNearestPlateAtEachSample) {
+    target_.yaw = 0.5;
+    target_.v_yaw = 3.0;
     const auto command = solve();
     ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_EQ(command.reference_status, "valid_mpc");
-    EXPECT_GT(command.yaw, 1.0);
-    EXPECT_NEAR(command.yaw_vel_deg_s, 0, 1e-5);
-    EXPECT_NEAR(command.yaw_acc_deg_s2, 0, 1e-5);
-    EXPECT_FALSE(command.fire_advice);
+    // 无弹速样本时飞行时间为0，独立计算四板最近板参考（含额外前后端点）。
+    const auto angle = [&](int k) {
+        double nearest = 1e10;
+        double yaw = 0;
+        for (int i = 0; i < 4; ++i) {
+            const double phase = 0.5 + 3.0 * (k - 50) * 0.01 + i * M_PI / 2;
+            const double x = 5.2 - 0.2 * std::cos(phase);
+            const double y = -0.2 * std::sin(phase);
+            if (std::hypot(x, y) < nearest) {
+                nearest = std::hypot(x, y);
+                yaw = std::atan2(y, x) * 180 / M_PI;
+            }
+        }
+        return yaw;
+    };
+    std::vector<double> reference, velocity;
+    const double anchor = angle(50);
+    for (int k = 0; k < 100; ++k) {
+        reference.push_back(std::remainder(angle(k) - anchor, 360.0));
+        velocity.push_back(std::remainder(angle(k + 1) - angle(k - 1), 360.0) / 0.02);
+    }
+    AxisMpc expected(AxisMpc::Config{});
+    const auto plan = expected.plan(reference, &velocity);
+    ASSERT_TRUE(plan);
+    EXPECT_NEAR(command.yaw, plan->position + anchor, 1e-5);
+    EXPECT_NEAR(command.yaw_vel_deg_s, plan->velocity, 1e-4);
+    EXPECT_NEAR(command.yaw_acc_deg_s2, plan->acceleration, 1e-3);
 }
 } // namespace qd::auto_aim

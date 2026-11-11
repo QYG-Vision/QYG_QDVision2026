@@ -39,10 +39,14 @@ public:
     /**
      * @brief 求解参考轨迹并返回窗口中点的 p/v/a，与同济 Planner 取点一致。
      * @param reference horizon 个角度参考，窗口中点对应当前规划时刻。
-     * @return 收敛且满足约束的参考；非法输入或求解失败时为空。
-     * @note 实例由求解线程独占，每次清空上一轮对偶状态以隔离目标切换。
+     * @param velocities 可选的逐点角速度，degree/s；规划路径提供中心差分结果。
+     * @return 有限迭代结果；非法输入或非有限输出时为空。
+     * @note 实例由求解线程独占，沿用济瞄的求解器状态保留方式。
      */
-    std::optional<Sample> plan(const std::vector<double>& reference) const;
+    std::optional<Sample> plan(const std::vector<double>& reference,
+                               const std::vector<double>* velocities = nullptr) const;
+    /** @brief 读取最近规划的采样点，索引须位于 [0, horizon-2]，单位 degree、s。 */
+    Sample sample_at(int index) const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl_;

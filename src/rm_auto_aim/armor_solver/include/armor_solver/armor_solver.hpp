@@ -181,20 +181,20 @@ public:
 
 private:
     /**
-     * @brief 从同一块装甲板的未来弹道角生成有限时域参考并求解两轴 MPC。
-     * @param aim 当前选板结果及图像时刻的运动状态。
+     * @brief 按济瞄最近板规则生成整车参考并求解两轴 MPC。
      * @param target 当前跟踪目标，包含坐标系和采样时间。
      * @param now 本轮求解的 ROS 时间。
      * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
-     * @return 反馈新鲜、弹道及两轴优化均成功时返回 true。
+     * @return 弹道有效且两轴结果有限时返回 true，与济瞄一样不强制收敛。
      */
-    bool plan_mpc(const ShootState& aim, const rm_interfaces::msg::Target& target,
+    bool plan_mpc(const rm_interfaces::msg::Target& target,
                   const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
     std::unique_ptr<AxisMpc> yaw_mpc_;
     std::unique_ptr<AxisMpc> pitch_mpc_;
     AxisMpc::Config mpc_config_;
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;
+    double fire_thresh_ = 0.003; // 济瞄规划误差阈值，rad。
     double feedback_timeout_ = 0.1;
     double target_timeout_ = 0.3;
 
