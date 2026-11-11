@@ -18,6 +18,7 @@ protected:
         rclcpp::NodeOptions options;
         options.parameter_overrides({
             rclcpp::Parameter("solver.use_armor_top", true),
+            rclcpp::Parameter("solver.top1.max_orientation_angle", 30.0),
             rclcpp::Parameter("solver.use_ballistic_compensation", false),
             rclcpp::Parameter("solver.compensator_type", "ideal")});
         node_ = std::make_shared<rclcpp::Node>("solver_mpc_test", options);
@@ -136,52 +137,47 @@ TEST_F(SolverMotionSwitches, publishesValidMpcReference) {
     EXPECT_NEAR(command.yaw_acc_deg_s2, 0, 1e-5);
     EXPECT_FALSE(command.fire_advice);
 }
-// 不提供弹速样本，飞行时间为零，使期望轨迹可直接由几何关系独立计算。
-TEST_F(SolverMotionSwitches, rotatingReferenceIncludesNextArmorWithinHorizon) {
-    target_.yaw = 0.5;
+// 几何决策在上游完成，下游应严格消费同一条参考，不能重新选择板。
+TEST_F(SolverMotionSwitches, upstreamReferenceContainsNextPlateAndDrivesMpc) {
+    target_.yaw = 0.2;
     target_.v_yaw = 3.0;
     solver_->update_feedback(feedback_);
     const auto command = solve();
-    ASSERT_TRUE(command.reference_valid) << command.reference_status;
-
-    AxisMpc::Config config;
-    AxisMpc expected_mpc(config);
-    std::vector<double> reference;
-    std::vector<double> frozen_reference;
-    int first_selected = -1;
-    bool switched = false;
-    for (int k = 0; k < config.horizon; ++k) {
-        double nearest = std::numeric_limits<double>::infinity();
-        double selected_yaw = 0.0;
-        int selected = -1;
-        for (int i = 0; i < 4; ++i) {
-            const double phase = target_.yaw
-                + target_.v_yaw * (k - config.horizon / 2) * config.dt + i * M_PI / 2;
-            const double x = target_.position.x - 0.2 * std::cos(phase);
-            const double y = -0.2 * std::sin(phase);
-            if (x * x + y * y < nearest) {
-                nearest = x * x + y * y;
-                selected_yaw = std::atan2(y, x) * 180 / M_PI;
-                selected = i;
-            }
-        }
-        if (k == 0) first_selected = selected;
-        switched = switched || selected != first_selected;
-        reference.push_back(selected_yaw);
-        const double phase = target_.yaw + target_.v_yaw * (k - config.horizon / 2) * config.dt;
-        frozen_reference.push_back(std::atan2(-0.2 * std::sin(phase),
-            target_.position.x - 0.2 * std::cos(phase)) * 180 / M_PI);
+    const auto& reference = solver_->aim_reference();
+    ASSERT_TRUE(reference.valid) << reference.status;
+    EXPECT_EQ(reference.current_armor_index, 0);
+    EXPECT_EQ(reference.next_armor_index, 3);
+    EXPECT_GT(reference.time_to_switch, 0.0);
+    EXPECT_LT(reference.time_to_switch, 0.5);
+    ASSERT_EQ(reference.yaw.size(), 100u);
+    EXPECT_TRUE(reference.fire_allowed[reference.output_index]);
+    bool has_wait = false;
+    for (size_t k = reference.output_index + 1; k < reference.yaw.size(); ++k) {
+        has_wait = has_wait || !reference.fire_allowed[k];
     }
-    ASSERT_TRUE(switched);
-    const auto expected = expected_mpc.plan(reference);
-    const auto frozen = expected_mpc.plan(frozen_reference);
+    EXPECT_TRUE(has_wait);
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
+    AxisMpc expected_mpc(AxisMpc::Config{});
+    const auto expected = expected_mpc.plan(reference.yaw);
     ASSERT_TRUE(expected);
-    ASSERT_TRUE(frozen);
     EXPECT_NEAR(command.yaw, expected->position, 1e-5);
-    EXPECT_GT(std::abs(command.yaw - frozen->position), 1e-3);
     EXPECT_NEAR(command.yaw_vel_deg_s, expected->velocity, 1e-4);
     EXPECT_NEAR(command.yaw_acc_deg_s2, expected->acceleration, 1e-3);
-    EXPECT_NEAR(command.exp_yaw, reference[config.horizon / 2], 1e-5);
+    EXPECT_NEAR(command.exp_yaw, reference.yaw[reference.output_index], 1e-5);
+    EXPECT_FALSE(command.fire_advice);
+}
+
+TEST_F(SolverMotionSwitches, waitingReferenceCannotAdviseFire) {
+    target_.yaw = 0.7;
+    target_.v_yaw = 3.0;
+    solver_->update_feedback(feedback_);
+    const auto command = solve();
+    const auto& reference = solver_->aim_reference();
+    ASSERT_TRUE(reference.valid) << reference.status;
+    EXPECT_EQ(reference.current_armor_index, 3);
+    EXPECT_FALSE(reference.fire_allowed[reference.output_index]);
+    EXPECT_GT(reference.wait_durations[reference.output_index], 0.0);
+    EXPECT_FALSE(reference.suggest_fire);
     EXPECT_FALSE(command.fire_advice);
 }
 

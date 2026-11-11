@@ -117,6 +117,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     std::shared_ptr<tf2_ros::Buffer> tf2_buffer_
 ) {
     ballistic_debug_.reset();
+    aim_reference_ = AimReference{};
     yaw_mpc_debug_.reset();
     pitch_mpc_debug_.reset();
     // Get newest parameters
@@ -195,44 +196,49 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         return invalid;
     }
 
-    // 根据top_level选择决策
-    RosTarget target_msg(target);
-    ShootState target_aim;
-    if (get_top_level() > 0) {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    } else if (use_armor_top_) {
-        target_aim = get_aim_positon(target_msg, gimbal_rpy_);
-    } else {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    }
-    ballistic_debug_ = target_aim.ballistic_debug;
-
-    // Initialize gimbal_cmd
+    // 上游一次性生成当前目标、未来换板/等板安排及完整参考；不再调用旧选板链。
+    aim_reference_ = build_aim_reference(target, current_time);
+    const auto& reference = aim_reference_;
+    ballistic_debug_ = reference.current_ballistic;
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
-    gimbal_cmd.reference_valid = false; // 只有两轴优化完成后才置有效
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
-    auto send_ypd = target_aim.aim_ypd;
-    auto send_ypd_v = target_aim.aim_ypd_v;
-    // 保存原始瞄准角供失败时诊断；有效发送角由 MPC 覆盖，不再额外叠加速度预测。
-    gimbal_cmd.yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
-    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
-    gimbal_cmd.distance = send_ypd.distance;
-    gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
-                             && target_aim.shoot == ShootMode::SHOOT_NOW;
-    // 以下信息主要用于调试和可视化
+    gimbal_cmd.distance = reference.distance;
     gimbal_cmd.bullet_speed = get_bullet_speed();
-    gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
-    gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
     gimbal_cmd.target_v_yaw = target.v_yaw;
-
-    if (!plan_mpc(target_aim, target, current_time, gimbal_cmd)) {
+    if (reference.valid) {
+        constexpr double RAD_TO_DEG = 180.0 / M_PI;
+        gimbal_cmd.exp_yaw = reference.current_aim.yaw * RAD_TO_DEG;
+        gimbal_cmd.exp_pitch = -reference.current_aim.pitch * RAD_TO_DEG;
+        gimbal_cmd.yaw = gimbal_cmd.exp_yaw;
+        gimbal_cmd.pitch = gimbal_cmd.exp_pitch;
+        gimbal_cmd.yaw_vel = reference.current_velocity.yaw * RAD_TO_DEG;
+        gimbal_cmd.pitch_vel = -reference.current_velocity.pitch * RAD_TO_DEG;
+    }
+    if (!plan_mpc(reference, current_time, gimbal_cmd)) {
         gimbal_cmd.reference_valid = false;
         gimbal_cmd.fire_advice = false;
+    } else {
+        // 火控消费同一决策；规划偏离参考以提前转移时，仍须由实际反馈确认对准。
+        constexpr double RAD_TO_DEG = 180.0 / M_PI;
+        const double yaw_tolerance = std::atan2(shooting_range_w_ * 0.5
+            * max_out_error[top_level], reference.distance) * RAD_TO_DEG;
+        const double pitch_tolerance = std::atan2(shooting_range_h_ * 0.5
+            * max_out_error[top_level], reference.distance) * RAD_TO_DEG;
+        gimbal_cmd.fire_advice = reference.suggest_fire
+            && std::abs(std::remainder(feedback_->yaw - gimbal_cmd.exp_yaw, 360.0))
+                <= yaw_tolerance
+            && std::abs(feedback_->pitch - gimbal_cmd.exp_pitch) <= pitch_tolerance;
+        // 只有成功规划的当前决定进入下一轮保持；未来采样不修改这个状态。
+        if (reference.current_armor_index >= 0) {
+            last_decision_state_ = reference.current_state;
+            last_decision_waiting_ = !reference.fire_allowed[reference.output_index];
+            last_decision_stamp_ = rclcpp::Time(target.header.stamp, current_time.get_clock_type());
+            last_decision_id_ = target.id;
+            last_decision_frame_ = target.header.frame_id;
+        } else {
+            last_decision_state_.reset();
+        }
     }
     return gimbal_cmd;
 }

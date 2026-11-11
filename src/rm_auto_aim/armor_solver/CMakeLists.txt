@@ -59,6 +59,10 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
+  ament_add_gtest(test_armor_decision test/test_armor_decision.cpp)
+  target_include_directories(test_armor_decision PRIVATE include)
+  target_link_libraries(test_armor_decision Eigen3::Eigen)
+
   ament_add_gtest(test_axis_mpc test/test_axis_mpc.cpp src/axis_mpc.cpp)
   target_include_directories(test_axis_mpc PRIVATE include)
   target_link_libraries(test_axis_mpc Eigen3::Eigen armor_tinympc)

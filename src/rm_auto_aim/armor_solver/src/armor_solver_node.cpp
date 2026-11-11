@@ -230,6 +230,19 @@ void ArmorSolverNode::timerCallback() {
                 msg.header = control_msg.header;
                 msg.header.stamp = solve_start_time;
                 msg.target_id = control_msg.id;
+                const auto& reference = solver_->aim_reference();
+                msg.reference_valid = reference.valid;
+                msg.reference_status = reference.status;
+                msg.reference_dt = reference.dt;
+                msg.reference_output_index = reference.output_index;
+                msg.current_armor_index = reference.current_armor_index;
+                msg.next_armor_index = reference.next_armor_index;
+                msg.time_to_switch_s = reference.time_to_switch;
+                msg.reference_angles_deg = std::string(axis) == "yaw"
+                    ? reference.yaw : reference.pitch;
+                msg.reference_armor_indices = reference.armor_indices;
+                msg.reference_fire_allowed = reference.fire_allowed;
+                msg.reference_wait_durations_s = reference.wait_durations;
                 msg.axis = axis;
                 msg.stage = debug.stage;
                 msg.status = debug.status;
@@ -246,12 +259,10 @@ void ArmorSolverNode::timerCallback() {
                 msg.dual_residual_input = debug.dual_residual_input;
                 mpc_debug_pub_->publish(msg);
             };
-            if (const auto& debug = solver_->yaw_mpc_debug()) {
-                publish_mpc_debug("yaw", *debug);
-            }
-            if (const auto& debug = solver_->pitch_mpc_debug()) {
-                publish_mpc_debug("pitch", *debug);
-            }
+            AxisMpc::Debug skipped;
+            skipped.stage = "not_run";
+            publish_mpc_debug("yaw", solver_->yaw_mpc_debug().value_or(skipped));
+            publish_mpc_debug("pitch", solver_->pitch_mpc_debug().value_or(skipped));
 
             if (const auto debug = solver_->get_ballistic_debug()) {
                 constexpr double RAD_TO_DEG = 180.0 / M_PI;
