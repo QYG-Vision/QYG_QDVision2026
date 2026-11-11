@@ -36,6 +36,7 @@
 // std
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -143,6 +144,11 @@ private:
     rclcpp::Publisher<rm_interfaces::msg::GimbalCmd>::SharedPtr gimbal_pub_;
     rclcpp::Publisher<rm_interfaces::msg::BallisticDebug>::SharedPtr ballistic_debug_pub_;
     rclcpp::Publisher<rm_interfaces::msg::MpcDebug>::SharedPtr mpc_debug_pub_;
+    // 调试与控制解耦：仅低频发布，有订阅者时才复制可选参考数组。
+    double mpc_debug_rate_hz_ = 5.0;
+    bool mpc_debug_reference_arrays_ = false;
+    std::chrono::steady_clock::time_point last_mpc_debug_publish_{};
+    std::chrono::steady_clock::time_point last_solver_failure_log_{};
     image_transport::Publisher result_img_pub_;
 
     // for pub img thread

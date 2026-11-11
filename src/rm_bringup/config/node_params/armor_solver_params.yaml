@@ -1,6 +1,8 @@
 /**:
   ros__parameters:
     debug: true
+    mpc_debug_rate_hz: 5.0           # 两轴各5 Hz；0关闭，仅影响调试话题
+    mpc_debug_reference_arrays: false # 完整参考数组按需开启，避免浏览器高负载
     armor_solver.result_img.jpeg_quality: 50  # 结果图像的jpeg压缩质量，0-100，数值越大质量越好，文件也越大
     target_frame: odom
     gimble_frame: gimbal_link
