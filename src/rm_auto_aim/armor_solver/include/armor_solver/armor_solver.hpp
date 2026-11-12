@@ -91,7 +91,11 @@ struct AimResult {
 // ros消息转换类
 struct RosTarget {
 public:
-    explicit RosTarget(rm_interfaces::msg::Target& target_msg) {
+    /**
+     * @brief 将 ROS 目标消息复制为解算器内部状态。
+     * @param target_msg 只读目标消息，位置和速度沿用消息中的坐标系及单位。
+     */
+    explicit RosTarget(const rm_interfaces::msg::Target& target_msg) {
         tracking_ = target_msg.tracking;
         id_ = target_msg.id;
         armors_num_ = target_msg.armors_num;

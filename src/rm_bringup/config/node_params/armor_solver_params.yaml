@@ -58,7 +58,7 @@
         feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
         target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
-          max_acceleration: 2864.788976  # degree/s²，对应同济 50 rad/s²
+          max_acceleration: 250.788976  # degree/s²，对应同济 50 rad/s² 2864.788976
         pitch:
           max_acceleration: 5729.577951  # degree/s²，对应同济 100 rad/s²
 
