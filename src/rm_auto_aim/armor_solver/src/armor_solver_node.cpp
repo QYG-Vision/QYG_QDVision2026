@@ -702,6 +702,7 @@ bool ArmorSolverNode::processArmors(
         // 更新 EKF 的预测时间 dt
         tracker_->ekf->setPredictFunc(Predict { dt_ });
         tracker_->ekf_point->setPredictFunc(EkfPredict { dt_ });
+        tracker_->setPredictDt(dt_);
 
         //三分法求yaw
         if (solveYawPnP_) {
