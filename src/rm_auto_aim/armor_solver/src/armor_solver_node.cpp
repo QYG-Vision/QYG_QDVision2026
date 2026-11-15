@@ -761,7 +761,7 @@ bool ArmorSolverNode::processArmors(
         target_msg.velocity.z = state(5);
         target_msg.yaw = state(6);
         target_msg.v_yaw = state(7);
-        target_msg.top_level = solver_->get_top_level();
+        target_msg.top_level = 0; // 兼容旧消息字段，已移除旋转分级。
         //填充每块装甲板的高度差
         target_msg.dz_list.clear();
         for (const auto& dz: tracker_->dz_list_) {

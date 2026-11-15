@@ -62,22 +62,6 @@
         pitch:
           max_acceleration: 5729.577951  # degree/s²，对应同济 100 rad/s²
 
-      # max_out_error 是开火误差，1最大，是整块小装甲板大小
-      # max_orientation_angle 是击打装甲板最大角度
-      # 以下的 angle 为角度制
-      top0:
-        max_out_error: 0.7
-        max_orientation_angle: 58.88
-      top1:
-        activate_threshold: 90.0  # 角速度达到该值时提升到1级
-        deactivate_threshold: 60.0 # 角速度低于该值时降到0级
-        max_out_error: 0.7
-        max_orientation_angle: 30.0
-      top2:
-        activate_threshold: 500.0 # 角速度达到该值时提升到2级
-        deactivate_threshold: 450.0 # 角速度低于该值时降到1级
-        max_out_error: 1.8
-        max_orientation_angle: 0.0
       # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿值，yaw轴补偿值"]
       # 目标相对于odom
       angle_offset: [

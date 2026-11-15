@@ -28,7 +28,6 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 // 3rd party
 #include <Eigen/Dense>
-#include <ceres/ceres.h>
 #include <eigen3/Eigen/Core>
 #include <utility>
 // project
@@ -56,22 +55,6 @@ struct BallisticDebugData {
     bool ballistic_success = false;
 };
 
-struct ShootState {
-    double yaw;
-    double pitch;
-    double distance;
-    // 上面几个不起主要作用
-
-    ShootMode shoot; // 开火建议
-    State state = State::Zero(); // 目标装甲板，整车模型才有
-    YpdCoord aim_ypd; // 电控要瞄准的位置
-    YpdCoord aim_ypd_v; // 目标在云台下的球坐标变化率
-    std::optional<BallisticDebugData> ballistic_debug;
-    State planning_state = State::Zero(); // 图像参考时刻选中装甲板的状态
-    bool planning_state_valid = false;
-    double wait_duration = 0.0; // 间接击打等待时间，s
-};
-
 struct ShootParam {
     double bullet_speed = 0.;
     double pitch_angle = 0.;
@@ -85,7 +68,6 @@ struct ShootParam {
 struct AimResult {
     YpdCoord aim_ypd;
     std::optional<BallisticDebugData> ballistic_debug;
-    double wait_duration = 0.0;
 };
 
 // ros消息转换类
@@ -174,14 +156,8 @@ public:
      */
     void update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback);
 
-
     // 可视化用的
     std::vector<std::pair<double, double>> getTrajectory() const noexcept;
-
-    ShootState get_aim(const RosTarget& target_msg, const Eigen::Vector3d& gimbal_rpy);
-    ShootState get_aim_positon(const RosTarget& target_msg, const Eigen::Vector3d& gimbal_rpy);
-
-    int get_top_level() const;
 
 private:
     /**
@@ -208,7 +184,6 @@ private:
     std::string gimble_frame_;
 
 private:
-    void update_top_level(const double angular_velocity);
 
     double get_ballistic_flying_time(const Eigen::Vector3d& target_pos);
     State solve_impact_state(const State& state, double base_delay);
@@ -220,89 +195,18 @@ private:
 
     State state_predict(const State& state, double dt);
 
-    std::vector<State> state_vec_to_direct_state_vec(
-        const std::vector<State>& state_vec,
-        const double& max_orientation_angle,
-        const Eigen::Vector3d& gimbal_rpy
-    );
-
     Eigen::Vector3d state_to_armor_pos(const State& state);
 
     YpdCoord xyz_to_ypd(const Eigen::Vector3d& xyz);
     YpdCoord aim_xyz_to_aim_ypd(const Eigen::Vector3d& xyz);
     AimResult target_pos_to_aim_ypd(const Eigen::Vector3d& xyz);
 
-    double aim_swing_cost(const YpdCoord& aim_ypd, const Eigen::Vector3d& gimbal_rpy);
-
-    std::pair<AimResult, State> choose_direct_aim(
-        const std::vector<State>& direct_state_vec,
-        const Eigen::Vector3d& gimbal_rpy
-    );
-    std::pair<AimResult, State> choose_indirect_aim(
-        const std::vector<State>& indirect_state_vec,
-        const Eigen::Vector3d& gimbal_rpy,
-        double max_orientation_angle_,
-        double max_out_error_
-    );
-
-    ShootState YpdCoord_to_ShootState(const YpdCoord& ypd, const ShootMode& shoot);
-    YpdCoord ShootState_to_YpdCoord(const ShootState& shoot_state);
-
-    Eigen::Vector3d state_to_armor_v(const State& state);
-    YpdCoord get_gimbal_ypd_v(
-        const Eigen::Vector3d& xyz_i,
-        const Eigen::Vector3d& xyz_v_i,
-        const Eigen::Vector3d& gimbal_rpy
-    );
-    ShootState state_vec_to_aim(
-        const std::vector<State>& state_vec,
-        const double& max_orientation_angle,
-        const double& max_out_error,
-        const bool& allow_indirect,
-        const Eigen::Vector3d& gimbal_rpy
-    );
-
-    bool aim_error_exceeded(
-        const YpdCoord& ypd,
-        const Eigen::Vector3d& gimbal_rpy,
-        const double& error_rate,
-        const double& yaw_inclined,
-        const double& pitch_inclined
-    );
-    bool aim_error_exceeded(
-        const YpdCoord& real_ypd,
-        const YpdCoord& ideal_ypd,
-        const Eigen::Vector3d& gimbal_rpy,
-        const double& error_rate,
-        const double& yaw_inclined,
-        const double& pitch_inclined
-    );
-    ShootMode isSuggestFire(
-        const YpdCoord& real_ypd,
-        const YpdCoord& ideal_ypd,
-        const Eigen::Vector3d& gimbal_rpy,
-        const double& error_rate,
-        const double& yaw_inclined,
-        const double& pitch_inclined
-    );
-
-    bool aim_cmp(const ShootState& aim_a, const ShootState& aim_b);
-
 private:
     Eigen::Vector3d gimbal_rpy_; // 当前云台姿态
-
-    int top_level; // 运动状态
 
     double gravity = 9.8;
     double resistance = 0.001;
     BulletSpeedState bullet_speed_state_;
-
-    double max_orientation_angle[3]; // 允许直接击打范围
-    double max_out_error[3]; // 允许的误差
-    double activate_threshold[3]; // 进入更高等级的阈值
-    double deactivate_threshold[3]; // 进入更低等级的阈值
-
-    double pitch_inclined_; // 装甲板pitch，相对于地面
 
     double prediction_delay_;
     double predict2send_delay_;
@@ -311,8 +215,6 @@ private:
 
     double shooting_range_w_;
     double shooting_range_h_;
-
-    double last_aim_yaw_ = 0.0; // 记录上一帧锁定的装甲板世界 yaw，用于切板滞回
 
     bool use_armor_top_ = false;
     bool use_ballistic_compensation_ = true;
