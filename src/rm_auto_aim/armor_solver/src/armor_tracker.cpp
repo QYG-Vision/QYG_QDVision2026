@@ -22,6 +22,7 @@ namespace qd::auto_aim {
 Tracker::Tracker(double max_match_distance, double max_match_yaw_diff):
     tracker_state(TrackerState::LOST),
     tracked_id(std::string("")),
+    tracked_armors_num(ArmorsNum::NORMAL_4),
     measurement(Eigen::VectorXd::Zero(Z_N)),
     target_state(Eigen::VectorXd::Zero(X_N)),
     armor_state(Eigen::VectorXd::Zero(X_N_)),
@@ -33,8 +34,32 @@ Tracker::Tracker(double max_match_distance, double max_match_yaw_diff):
     lost_count_(0),
     state_machine_(qd::utils::VisionStateMachine::getInstance()) {}
 
+void Tracker::configure_imm(bool enabled, const SpinImm::Params& params) {
+    spin_imm_.set_params(params);
+    imm_enabled_ = enabled;
+    spin_imm_.reset();
+}
+
+bool Tracker::imm_active() const noexcept {
+    return imm_enabled_ && tracked_armors_num != ArmorsNum::OUTPOST_3
+        && spin_imm_.initialized() && std::isfinite(spin_imm_.yaw())
+        && std::isfinite(spin_imm_.v_yaw()) && std::isfinite(spin_imm_.alpha_yaw());
+}
+
+Eigen::Vector3d Tracker::rotation_state() const noexcept {
+    if (imm_active()) {
+        return { spin_imm_.yaw(), spin_imm_.v_yaw(), spin_imm_.alpha_yaw() };
+    }
+    return { target_state(6), target_state(7), 0.0 };
+}
+
 void Tracker::init(const Armors::SharedPtr& armors_msg) noexcept {
+    spin_imm_.reset();
+    detect_count_ = 0;
+    lost_count_ = 0;
     if (armors_msg->armors.empty()) {
+        tracker_state = TrackerState::LOST;
+        state_machine_.setTrackerState(tracker_state);
         return;
     }
 
@@ -63,6 +88,9 @@ void Tracker::init(const Armors::SharedPtr& armors_msg) noexcept {
         tracked_armors_num = ArmorsNum::NORMAL_4;
     }
 
+    if (imm_enabled_ && tracked_armors_num != ArmorsNum::OUTPOST_3) {
+        spin_imm_.initialize(target_state(6), target_state(7), 0.0, 0.4, 100.0, 100.0);
+    }
     computeArmorParams();
 }
 
@@ -75,6 +103,15 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
     Eigen::VectorXd ekf_prediction = ekf->predict();
     target_state = ekf_prediction;
 
+    if (imm_enabled_ && tracked_armors_num != ArmorsNum::OUTPOST_3) {
+        if (!spin_imm_.initialized()) {
+            spin_imm_.initialize(target_state(6), target_state(7), 0.0, 0.4, 100.0, 100.0);
+        } else {
+            spin_imm_.predict(prediction_dt_);
+        }
+    }
+    const bool use_imm = imm_active();
+    const auto predicted_rotation = rotation_state();
     int armors_num_int = static_cast<int>(tracked_armors_num);
 
     // 匹配并更新所有同 id 装甲板（用马氏距离选择对应装甲板）
@@ -82,6 +119,8 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
     double best_area = 0;
     Armor best_armor;
     double best_yaw_diff = DBL_MAX;
+    double best_phase_observation = 0.0;
+    bool have_phase_observation = false;
 
     for (const auto& armor: armors_msg->armors) {
         if (armor.number != tracked_id) {
@@ -104,11 +143,34 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
             Measure h(i, armors_num_int);
             this->ekf->setMeasureFunc(h);
 
-            double mahalanobis = this->ekf->calculateMahalanobisDistance(measurement_candidate);
-            double predicted_yaw = reduced_angle(target_state(6) + i * 2.0 * M_PI / armors_num_int);
+            double mahalanobis;
+            if (use_imm) {
+                RobotStateEKF::MatrixX1 association_state = target_state;
+                association_state(6) = predicted_rotation(0);
+                association_state(7) = predicted_rotation(1);
+                RobotStateEKF::MatrixXX covariance = ekf->prior_covariance();
+                // 两个独立估计器的交叉相关未知，关联时使用分块对角近似。
+                covariance.row(6).setZero();
+                covariance.col(6).setZero();
+                covariance.row(7).setZero();
+                covariance.col(7).setZero();
+                covariance(6, 6) = std::max(1e-9, spin_imm_.yaw_cov());
+                covariance(7, 7) = std::max(1e-9, spin_imm_.v_yaw_cov());
+                mahalanobis = ekf->calculateMahalanobisDistance(
+                    measurement_candidate, association_state, covariance
+                );
+            } else {
+                mahalanobis = ekf->calculateMahalanobisDistance(measurement_candidate);
+            }
+            double predicted_yaw = reduced_angle(
+                (use_imm ? predicted_rotation(0) : target_state(6))
+                + i * 2.0 * M_PI / armors_num_int
+            );
             double yaw_diff = std::abs(reduced_angle(predicted_yaw - yaw));
 
-            if (mahalanobis < min_mahalanobis) {
+            if (std::isfinite(mahalanobis)
+                && (!use_imm || yaw_diff <= max_match_yaw_diff_)
+                && mahalanobis < min_mahalanobis) {
                 min_mahalanobis = mahalanobis;
                 min_yaw_diff = yaw_diff;
                 best_offset = i;
@@ -139,14 +201,21 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
         matched = true;
 
         // 记录面积最大的装甲板用于可视化与决策
-        if (armor.area > best_area) {
+        if (!have_phase_observation || armor.area > best_area) {
             best_area = armor.area;
             best_armor = armor;
             best_yaw_diff = min_yaw_diff;
+            best_phase_observation =
+                reduced_angle(yaw - best_offset * 2.0 * M_PI / armors_num_int);
+            have_phase_observation = true;
         }
     }
 
+    if (use_imm && have_phase_observation) {
+        spin_imm_.update(best_phase_observation, spin_imm_.params().r_yaw);
+    }
     updateTracker(matched);
+    if (tracker_state == TrackerState::LOST) spin_imm_.reset();
     if (!matched) {
         computeArmorParams();
         return;

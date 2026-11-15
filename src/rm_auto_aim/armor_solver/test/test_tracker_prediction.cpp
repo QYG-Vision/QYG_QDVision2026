@@ -18,7 +18,13 @@ namespace {
                 Measure {},
                 []() { return RobotStateEKF::MatrixXX::Identity() * 1e-4; },
                 [](const RobotStateEKF::MatrixZ1&) { return RobotStateEKF::MatrixZZ::Identity(); },
-                RobotStateEKF::MatrixXX::Identity()
+                RobotStateEKF::MatrixXX::Identity(),
+                [](const RobotStateEKF::MatrixZ1& z, const RobotStateEKF::MatrixZ1& prior) {
+                    RobotStateEKF::MatrixZ1 residual = z - prior;
+                    residual(0) = reduced_angle(residual(0));
+                    residual(3) = reduced_angle(residual(3));
+                    return residual;
+                }
             );
             tracker_->ekf_point = std::make_unique<ArmorStateEKF>(
                 EkfPredict { dt_ },
@@ -121,6 +127,56 @@ namespace {
         EXPECT_TRUE(tracker_->target_state.isApprox(initial_target, 1e-10));
         EXPECT_TRUE(tracker_->armor_state.isApprox(initial_armor, 1e-10));
         EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+    }
+
+
+    TEST_F(TrackerPredictionTest, imm_direct_output_tracks_switching_plates) {
+        SpinImm defaults;
+        auto params = defaults.params();
+        params.r_yaw = 0.06;
+        tracker_->configure_imm(true, params);
+        tracker_->init(initial_frame_);
+        tracker_->tracker_state = TrackerState::TRACKING;
+        tracker_->set_prediction_dt(dt_);
+        for (int i = 1; i <= 160; ++i) {
+            const double t = i * dt_;
+            const double phase = 0.5 * 0.8 * t * t;
+            const int offset = (i / 15) % 4;
+            const double observed = phase + offset * M_PI / 2;
+            auto frame = std::make_shared<Tracker::Armors>();
+            auto armor = initial_frame_->armors.front();
+            armor.pose.position.x = 2.26 - 0.26 * std::cos(observed);
+            armor.pose.position.y = -0.26 * std::sin(observed);
+            armor.pose.orientation.z = std::sin(observed / 2);
+            armor.pose.orientation.w = std::cos(observed / 2);
+            frame->armors.push_back(armor);
+            tracker_->update(frame);
+            ASSERT_TRUE(tracker_->imm_active());
+            const auto rotation = tracker_->rotation_state();
+            ASSERT_LT(std::abs(std::remainder(rotation(0) - phase, 2 * M_PI)), 0.15);
+            ASSERT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+        }
+        EXPECT_GT(tracker_->rotation_state()(1), 5.0);
+        EXPECT_TRUE(std::isfinite(tracker_->rotation_state()(2)));
+        const auto before = tracker_->rotation_state();
+        tracker_->update(std::make_shared<Tracker::Armors>());
+        EXPECT_TRUE(tracker_->imm_active());
+        EXPECT_NE(tracker_->rotation_state()(0), before(0));
+        tracker_->configure_imm(false, defaults.params());
+        EXPECT_FALSE(tracker_->imm_active());
+        EXPECT_DOUBLE_EQ(tracker_->rotation_state()(2), 0.0);
+    }
+
+    TEST_F(TrackerPredictionTest, imm_reset_and_outpost_keep_original_prior) {
+        SpinImm defaults;
+        tracker_->configure_imm(true, defaults.params());
+        tracker_->init(initial_frame_);
+        EXPECT_TRUE(tracker_->imm_active());
+        EXPECT_DOUBLE_EQ(tracker_->rotation_state()(2), 0.0);
+        initial_frame_->armors.front().number = "outpost";
+        tracker_->init(initial_frame_);
+        EXPECT_FALSE(tracker_->imm_active());
+        EXPECT_DOUBLE_EQ(tracker_->rotation_state()(2), 0.0);
     }
 
 } // namespace

@@ -143,11 +143,27 @@ public:
 
   double getNIS() const noexcept { return nis_; }
 
+  /** @brief 返回当前先验协方差的只读引用。 */
+  const MatrixXX &prior_covariance() const noexcept { return P_pri; }
+
   // Evaluate measurement association quality under the current priori state.
   double calculateMahalanobisDistance(const MatrixZ1 &z) noexcept {
+    return calculateMahalanobisDistance(z, x_pri, P_pri);
+  }
+
+  /**
+   * @brief 使用独立预测评估关联距离，不修改当前滤波状态及协方差。
+   * @param z 观测向量，语义与本滤波器量测模型一致。
+   * @param predicted_state 用于关联的候选先验状态。
+   * @param covariance 与候选状态对应的先验协方差。
+   * @return 创新马氏距离平方。
+   */
+  double calculateMahalanobisDistance(const MatrixZ1 &z,
+                                     const MatrixX1 &predicted_state,
+                                     const MatrixXX &covariance) noexcept {
     ceres::Jet<double, N_X> x_p_jet[N_X];
     for (int i = 0; i < N_X; i++) {
-      x_p_jet[i].a = x_pri[i];
+      x_p_jet[i].a = predicted_state[i];
       x_p_jet[i].v[i] = 1;
     }
     ceres::Jet<double, N_X> z_p_jet[N_Z];
@@ -166,7 +182,7 @@ public:
     }
 
     MatrixZZ R_eval = update_R(z);
-    MatrixZZ S = H_eval * P_pri * H_eval.transpose() + R_eval;
+    MatrixZZ S = H_eval * covariance * H_eval.transpose() + R_eval;
     return (innovation.transpose() * S.ldlt().solve(innovation))(0, 0);
   }
 

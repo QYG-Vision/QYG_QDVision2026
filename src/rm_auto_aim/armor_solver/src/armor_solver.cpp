@@ -137,7 +137,8 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     const auto finite_xyz = [](const auto& value) {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     };
-    bool valid_target = target.tracking && std::isfinite(target.v_yaw)
+    bool valid_target = target.tracking && std::isfinite(target.a_yaw)
+        && std::isfinite(target.v_yaw)
         && std::isfinite(target.yaw) && finite_xyz(target.position) && finite_xyz(target.velocity)
         && target.armors_num > 0
         && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
@@ -270,7 +271,8 @@ std::vector<State> Solver::get_armors_state(const RosTarget& target_msg) {
     auto dz_list = target_msg.dz_list_;
     auto armors_state = std::vector<State>(
         armors_num,
-        { c_pos.x(), c_vel.x(), c_pos.y(), c_vel.y(), c_pos.z(), c_vel.z(), 0.0, v_yaw, 0.0 }
+        { c_pos.x(), c_vel.x(), c_pos.y(), c_vel.y(), c_pos.z(), c_vel.z(),
+          0.0, v_yaw, 0.0, target_msg.a_yaw_ }
     );
     // Calculate the position of each armor
     double r = 0., target_dz = 0.;
@@ -343,7 +345,9 @@ State Solver::state_predict(const State& state, double dt) {
     state_predict(0) += state_predict(1) * dt;
     state_predict(2) += state_predict(3) * dt;
     state_predict(4) += state_predict(5) * dt;
-    state_predict(6) = reduced_angle(state_predict(6) + state_predict(7) * dt);
+    // 固定状态快照的恒角加速度预测，同时支持 MPC 的正、负时间采样。
+    state_predict(6) = reduced_angle(state(6) + state(7) * dt + 0.5 * state(9) * dt * dt);
+    state_predict(7) = state(7) + state(9) * dt;
 
     return state_predict;
 }

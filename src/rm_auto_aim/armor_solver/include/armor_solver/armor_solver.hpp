@@ -43,9 +43,9 @@
 
 namespace qd::auto_aim {
 
-constexpr int N_X = 9;
+constexpr int N_X = 10;
 using State = Eigen::Matrix<double, N_X, 1>; // 用于存放装甲板信息
-// state: xc, v_xc, yc, v_yc, za, v_za, orient, v_yaw, r,
+// state: xc, v_xc, yc, v_yc, za, v_za, orient, v_yaw, r, a_yaw
 
 /** @brief 保存同一次弹道解算的角度，内部单位为 rad。 */
 struct BallisticDebugData {
@@ -97,6 +97,7 @@ public:
         armor_velocity_.z() = target_msg.velocity_armor.z;
         yaw_ = target_msg.yaw;
         v_yaw_ = target_msg.v_yaw;
+        a_yaw_ = target_msg.a_yaw;
         dz_list_.clear();
         for (const auto& dz: target_msg.dz_list) {
             dz_list_.emplace_back(dz);
@@ -116,7 +117,7 @@ public:
     // 平移运动
     Eigen::Vector3d armor_position_;
     Eigen::Vector3d armor_velocity_;
-    double yaw_, v_yaw_;
+    double yaw_, v_yaw_, a_yaw_;
     std::vector<double> dz_list_;
     std::vector<double> radius_list_;
 };

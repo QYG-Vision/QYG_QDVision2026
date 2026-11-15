@@ -19,6 +19,7 @@
 #include "armor_solver/armor_solver_node.hpp"
 
 #include <cv_bridge/cv_bridge.h>
+#include <stdexcept>
 #include <image_transport/image_transport.hpp>
 #include <sensor_msgs/image_encodings.hpp>
 
@@ -71,6 +72,38 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
     tracker_->tracking_thres = this->declare_parameter("tracker.tracking_thres", 5);
     lost_time_thres_ = this->declare_parameter("tracker.lost_time_thres", 0.3);
     filter_reset_dt_thres_ = this->declare_parameter("tracker.filter_reset_dt_thres", 1.0);
+
+    SpinImm default_imm;
+    auto imm_params = default_imm.params();
+    const bool imm_enabled = declare_parameter("tracker.imm.enabled", true);
+    const auto transition = declare_parameter(
+        "tracker.imm.transition",
+        std::vector<double>{0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90}
+    );
+    if (transition.size() != 9) {
+        throw std::invalid_argument("tracker.imm.transition must contain 9 values");
+    }
+    for (int row = 0; row < 3; ++row) {
+        for (int col = 0; col < 3; ++col) {
+            imm_params.transition(row, col) = transition[row * 3 + col];
+        }
+    }
+    imm_params.r_yaw = declare_parameter("tracker.imm.r_yaw", imm_params.r_yaw);
+    imm_params.q_v_slow = declare_parameter("tracker.imm.q_v_slow", imm_params.q_v_slow);
+    imm_params.q_v_constant = declare_parameter("tracker.imm.q_v_constant", imm_params.q_v_constant);
+    imm_params.q_v_variable = declare_parameter("tracker.imm.q_v_variable", imm_params.q_v_variable);
+    imm_params.q_alpha_slow = declare_parameter("tracker.imm.q_alpha_slow", imm_params.q_alpha_slow);
+    imm_params.q_alpha_constant = declare_parameter("tracker.imm.q_alpha_constant", imm_params.q_alpha_constant);
+    imm_params.q_alpha_variable = declare_parameter("tracker.imm.q_alpha_variable", imm_params.q_alpha_variable);
+    imm_params.alpha_decay_slow = declare_parameter("tracker.imm.alpha_decay_slow", imm_params.alpha_decay_slow);
+    imm_params.alpha_decay_constant = declare_parameter("tracker.imm.alpha_decay_constant", imm_params.alpha_decay_constant);
+    imm_params.dt_min = declare_parameter("tracker.imm.dt_min", imm_params.dt_min);
+    imm_params.dt_max = declare_parameter("tracker.imm.dt_max", imm_params.dt_max);
+    imm_params.mu_min = declare_parameter("tracker.imm.mu_min", imm_params.mu_min);
+    imm_params.nis_gate = declare_parameter("tracker.imm.nis_gate", imm_params.nis_gate);
+    tracker_->configure_imm(imm_enabled, imm_params);
+    FYT_INFO("armor_solver", "Rotation IMM direct matching/prediction: {}", imm_enabled);
+
 
     // tf2 relevant
     tf2_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -480,8 +513,10 @@ std::vector<rm_interfaces::msg::Armor> ArmorSolverNode::getReprojectedArmors() {
     }
 
     std::vector<rm_interfaces::msg::Armor> reprojected_armors;
+    auto display_state = tracker_->target_state;
+    display_state(6) = armor_target_.yaw;
     const auto armor_poses = qd::utils::getArmorPosesFromState(
-        tracker_->target_state,
+        display_state,
         armor_target_.armors_num,
         armor_target_.radius_list,
         armor_target_.dz_list
@@ -679,10 +714,10 @@ bool ArmorSolverNode::processArmors(
         //更新predictEKF的dt
         dt_ = (time - last_time_).seconds();
 
-        if (dt_ > filter_reset_dt_thres_) {
+        if (!std::isfinite(dt_) || dt_ <= 0.0 || dt_ > filter_reset_dt_thres_) {
             FYT_WARN(
                 "armor_solver",
-                "dt {:.3f}s > {:.3f}s, reset tracker EKF",
+                "Invalid/reset dt {:.3f}s (limit {:.3f}s), reset tracker EKF",
                 dt_,
                 filter_reset_dt_thres_
             );
@@ -700,6 +735,7 @@ bool ArmorSolverNode::processArmors(
         tracker_->lost_thres = std::max(1, std::abs(static_cast<int>(lost_time_thres_ / dt_)));
 
         // 更新 EKF 的预测时间 dt
+        tracker_->set_prediction_dt(dt_);
         tracker_->ekf->setPredictFunc(Predict { dt_ });
         tracker_->ekf_point->setPredictFunc(EkfPredict { dt_ });
 
@@ -708,7 +744,7 @@ bool ArmorSolverNode::processArmors(
             solveYawPnP_->solve(
                 armors_msg,
                 source_header,
-                tracker_->target_state(6),
+                tracker_->rotation_state()(0),
                 tracker_->tracked_id,
                 tf2_buffer_
             );
@@ -759,8 +795,19 @@ bool ArmorSolverNode::processArmors(
         target_msg.velocity.y = state(3);
         target_msg.position.z = state(4);
         target_msg.velocity.z = state(5);
-        target_msg.yaw = state(6);
-        target_msg.v_yaw = state(7);
+        const auto rotation = tracker_->rotation_state();
+        target_msg.yaw = rotation(0);
+        target_msg.v_yaw = rotation(1);
+        target_msg.a_yaw = rotation(2);
+        if (tracker_->imm_active()) {
+            const auto probabilities = tracker_->imm_probabilities();
+            RCLCPP_DEBUG_THROTTLE(
+                get_logger(), *get_clock(), 500,
+                "IMM theta=%.4f w=%.4f alpha=%.4f mu=[%.3f %.3f %.3f]",
+                rotation(0), rotation(1), rotation(2),
+                probabilities[0], probabilities[1], probabilities[2]
+            );
+        }
         target_msg.top_level = 0; // 兼容旧消息字段，已移除旋转分级。
         //填充每块装甲板的高度差
         target_msg.dz_list.clear();
@@ -850,8 +897,10 @@ void ArmorSolverNode::publishMarkers(
         armors_marker_.action = visualization_msgs::msg::Marker::ADD;
         armors_marker_.scale.y = tracker_->tracked_armor.type == "small" ? 0.135 : 0.23;
         // Draw armors（由 rm_utils 根据状态量统一推导所有装甲板 xyz + yaw）
+        auto display_state = tracker_->target_state;
+        display_state(6) = target_msg.yaw;
         const auto armor_poses = qd::utils::getArmorPosesFromState(
-            tracker_->target_state,
+            display_state,
             target_msg.armors_num,
             target_msg.radius_list,
             target_msg.dz_list

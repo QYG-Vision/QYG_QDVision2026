@@ -1,4 +1,5 @@
 #include <memory>
+#include <limits>
 
 #include "armor_solver/armor_solver.hpp"
 #include "gtest/gtest.h"
@@ -125,4 +126,50 @@ TEST_F(SolverMotionSwitches, windowUsesNearestPlateAtEachSample) {
     EXPECT_NEAR(command.yaw_vel_deg_s, plan->velocity, 1e-4);
     EXPECT_NEAR(command.yaw_acc_deg_s2, plan->acceleration, 1e-3);
 }
+
+TEST_F(SolverMotionSwitches, acceleration_reaches_mpc_reference_in_both_time_directions) {
+    target_.yaw = 0.3;
+    target_.v_yaw = 2.0;
+    target_.a_yaw = 5.0;
+    const auto command = solve();
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
+    const auto angle = [&](int k) {
+        const double t = (k - 50) * 0.01;
+        double nearest = 1e10;
+        double yaw = 0.0;
+        for (int i = 0; i < 4; ++i) {
+            const double phase = 0.3 + 2.0 * t + 2.5 * t * t + i * M_PI / 2;
+            const double x = 5.2 - 0.2 * std::cos(phase);
+            const double y = -0.2 * std::sin(phase);
+            if (std::hypot(x, y) < nearest) {
+                nearest = std::hypot(x, y);
+                yaw = std::atan2(y, x) * 180 / M_PI;
+            }
+        }
+        return yaw;
+    };
+    std::vector<double> reference, velocity;
+    const double anchor = angle(50);
+    for (int k = 0; k < 100; ++k) {
+        reference.push_back(std::remainder(angle(k) - anchor, 360.0));
+        velocity.push_back(std::remainder(angle(k + 1) - angle(k - 1), 360.0) / 0.02);
+    }
+    AxisMpc expected(AxisMpc::Config{});
+    const auto plan = expected.plan(reference, &velocity);
+    ASSERT_TRUE(plan);
+    EXPECT_NEAR(command.yaw, plan->position + anchor, 1e-5);
+    EXPECT_NEAR(command.yaw_vel_deg_s, plan->velocity, 1e-4);
+    EXPECT_NEAR(command.yaw_acc_deg_s2, plan->acceleration, 1e-3);
+    target_.a_yaw = 0.0;
+    const auto constant_velocity_command = solve();
+    EXPECT_GT(std::abs(command.yaw_vel_deg_s - constant_velocity_command.yaw_vel_deg_s), 1e-4);
+}
+
+TEST_F(SolverMotionSwitches, rejects_nonfinite_target_acceleration) {
+    target_.a_yaw = std::numeric_limits<double>::quiet_NaN();
+    const auto command = solve();
+    EXPECT_FALSE(command.reference_valid);
+    EXPECT_EQ(command.reference_status, "invalid_target");
+}
+
 } // namespace qd::auto_aim

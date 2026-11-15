@@ -36,6 +36,7 @@
 #include <Eigen/Eigen>
 // project
 #include "armor_solver/motion_model.hpp"
+#include "armor_solver/spin_imm.hpp"
 #include "rm_interfaces/msg/armors.hpp"
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/math/extended_kalman_filter.hpp"
@@ -66,6 +67,25 @@ public:
      * @note 调用前须将两个 EKF 的预测时间间隔设为相邻图像的实际时间差。
      */
     void update(const Armors::SharedPtr& armors_msg) noexcept;
+
+    /**
+     * @brief 设置旋转 IMM，启用后直接用于匹配预测及下游旋转输出。
+     * @param enabled 是否启用普通目标的旋转 IMM；前哨站保留原旋转先验。
+     * @param params 已校验的三模型参数。
+     */
+    void configure_imm(bool enabled, const SpinImm::Params& params);
+
+    /** @brief 设置相邻图像实际时间差（秒），与两个 EKF 使用相同时间基准。 */
+    void set_prediction_dt(double dt) noexcept { prediction_dt_ = dt; }
+
+    /** @brief 返回本帧下游旋转状态 [yaw, rad/s, rad/s²]，失效时使用原 EKF。 */
+    Eigen::Vector3d rotation_state() const noexcept;
+
+    /** @brief 返回旋转 IMM 是否正在为普通目标提供有限状态。 */
+    bool imm_active() const noexcept;
+
+    /** @brief 返回三模型概率，顺序为 slow、constant、variable。 */
+    std::array<double, 3> imm_probabilities() const { return spin_imm_.model_probabilities(); }
 
     TrackerState tracker_state;
 
@@ -99,6 +119,10 @@ private:
     double orientationToYaw(const geometry_msgs::msg::Quaternion& q) noexcept;
 
     void updateTracker(bool matched) noexcept;
+
+    SpinImm spin_imm_;
+    bool imm_enabled_ = false;
+    double prediction_dt_ = 0.005;
 
     double max_match_distance_;
     double max_match_yaw_diff_;

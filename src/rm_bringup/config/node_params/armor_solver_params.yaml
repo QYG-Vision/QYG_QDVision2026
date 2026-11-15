@@ -27,6 +27,27 @@
 
       tracking_thres: 2
       lost_time_thres: 0.3
+
+      # 直接参与匹配预测和下游旋转输出；关闭后恢复原 EKF，a_yaw=0。
+      imm:
+        enabled: true
+        # slow / constant / variable，行优先，每行之和为 1。
+        transition: [0.93, 0.05, 0.02, 0.04, 0.93, 0.03, 0.03, 0.07, 0.90]
+        r_yaw: 0.06  # 姿态朝向观测方差，rad²；需按本机数据调整。
+        # 沿用杭电离散步噪声；与实际帧率有关，不是主 EKF 的 q_orientation_yaw_v。
+        q_v_slow: 0.08
+        q_v_constant: 0.02
+        q_v_variable: 0.20
+        q_alpha_slow: 0.10
+        q_alpha_constant: 0.05
+        q_alpha_variable: 0.80
+        # 每个预测步保留的 alpha 比例；越小回零越快。
+        alpha_decay_slow: 0.2
+        alpha_decay_constant: 0.5
+        dt_min: 0.001  # 参数合法性下限，实际短 dt 不会被强行放大。
+        dt_max: 0.2    # 大间隔分步推进，保留全部实际经过时间。
+        mu_min: 0.0001
+        nis_gate: 9.0
           
     solver:
       use_armor_top: true            # 兼容旧参数；当前济瞄 MPC 路径统一使用整车候选板

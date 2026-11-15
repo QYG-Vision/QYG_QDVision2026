@@ -8,6 +8,8 @@ geometry_msgs/Point position_armor
 geometry_msgs/Vector3 velocity_armor
 float64 yaw
 float64 v_yaw
+# 目标旋转角加速度，rad/s²；原 EKF/前哨站路径为 0
+float64 a_yaw
 int32 top_level
 float64[] dz_list
 float64[] radius_list
