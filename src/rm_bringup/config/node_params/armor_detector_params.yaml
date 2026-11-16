@@ -4,7 +4,7 @@
     target_frame: odom
     detect_color: 0
     binary_thres: 80
-    max_yaw_angle: 60.0
+    max_yaw_angle: 1.0471975511965976 # rad
     device: "GPU"
 
     detector: yolo # tradition ：使用opencv识别  yolo : 使用神经网络识别
@@ -13,14 +13,14 @@
 
     light.min_ratio: 0.0001
     light.max_ratio: 1.0
-    light.max_angle: 45.0
+    light.max_angle: 0.7853981633974483 # rad
     light.color_diff_thresh: 20
     armor.min_light_ratio: 0.8
     armor.min_small_center_distance: 0.8
     armor.max_small_center_distance: 3.5
     armor.min_large_center_distance: 3.5
     armor.max_large_center_distance: 8.0
-    armor.max_angle: 35.0
+    armor.max_angle: 0.6108652381980153 # rad
 
     classifier_threshold: 0.7
     ignore_classes: ["negative"]

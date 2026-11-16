@@ -107,7 +107,7 @@ TEST_F(SolverMotionSwitches, windowUsesNearestPlateAtEachSample) {
             const double y = -0.2 * std::sin(phase);
             if (std::hypot(x, y) < nearest) {
                 nearest = std::hypot(x, y);
-                yaw = std::atan2(y, x) * 180 / M_PI;
+                yaw = std::atan2(y, x);
             }
         }
         return yaw;
@@ -115,14 +115,14 @@ TEST_F(SolverMotionSwitches, windowUsesNearestPlateAtEachSample) {
     std::vector<double> reference, velocity;
     const double anchor = angle(50);
     for (int k = 0; k < 100; ++k) {
-        reference.push_back(std::remainder(angle(k) - anchor, 360.0));
-        velocity.push_back(std::remainder(angle(k + 1) - angle(k - 1), 360.0) / 0.02);
+        reference.push_back(std::remainder(angle(k) - anchor, 2.0 * M_PI));
+        velocity.push_back(std::remainder(angle(k + 1) - angle(k - 1), 2.0 * M_PI) / 0.02);
     }
     AxisMpc expected(AxisMpc::Config{});
     const auto plan = expected.plan(reference, &velocity);
     ASSERT_TRUE(plan);
     EXPECT_NEAR(command.yaw, plan->position + anchor, 1e-5);
-    EXPECT_NEAR(command.yaw_vel_deg_s, plan->velocity, 1e-4);
-    EXPECT_NEAR(command.yaw_acc_deg_s2, plan->acceleration, 1e-3);
+    EXPECT_NEAR(command.yaw_vel_rad_s, plan->velocity, 1e-4);
+    EXPECT_NEAR(command.yaw_acc_rad_s2, plan->acceleration, 1e-3);
 }
 } // namespace qd::auto_aim

@@ -8,8 +8,8 @@
 namespace qd::auto_aim {
 void Solver::update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback) {
     if (!std::isfinite(feedback.yaw) || !std::isfinite(feedback.pitch)
-        || !std::isfinite(feedback.yaw_actual_vel_deg_s)
-        || !std::isfinite(feedback.pitch_actual_vel_deg_s) || feedback.mode > 5) {
+        || !std::isfinite(feedback.yaw_actual_vel_rad_s)
+        || !std::isfinite(feedback.pitch_actual_vel_rad_s) || feedback.mode > 5) {
         feedback_.reset();
         return;
     }
@@ -43,7 +43,6 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     for (const auto& state: candidates) {
         if (!state.allFinite() || state[8] <= 0.0) return reject("invalid_target");
     }
-    constexpr double RAD_TO_DEG = 180.0 / M_PI;
     const int half = mpc_config_.horizon / 2;
     // 保留奇点图像年龄、发送延迟、额外前移及飞行时间求解；不叠加旧等板时间。
     for (auto& state: candidates) {
@@ -91,15 +90,15 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
         for (int k = 0; k < mpc_config_.horizon; ++k) {
             advance(mpc_config_.dt);
             const auto next = aim(candidates);
-            yaw.push_back(reduced_angle(current.first.aim_ypd.yaw - yaw0) * RAD_TO_DEG);
-            pitch.push_back(-current.first.aim_ypd.pitch * RAD_TO_DEG);
+            yaw.push_back(reduced_angle(current.first.aim_ypd.yaw - yaw0));
+            pitch.push_back(-current.first.aim_ypd.pitch);
             yaw_velocity.push_back(reduced_angle(next.first.aim_ypd.yaw
-                - last.first.aim_ypd.yaw) / (2 * mpc_config_.dt) * RAD_TO_DEG);
+                - last.first.aim_ypd.yaw) / (2 * mpc_config_.dt));
             pitch_velocity.push_back(-(next.first.aim_ypd.pitch
-                - last.first.aim_ypd.pitch) / (2 * mpc_config_.dt) * RAD_TO_DEG);
+                - last.first.aim_ypd.pitch) / (2 * mpc_config_.dt));
             if (k == half) {
                 command.distance = current.second;
-                command.exp_yaw = reduced_angle(current.first.aim_ypd.yaw) * RAD_TO_DEG;
+                command.exp_yaw = reduced_angle(current.first.aim_ypd.yaw);
                 command.exp_pitch = pitch.back();
                 command.yaw_vel = yaw_velocity.back();
                 command.pitch_vel = pitch_velocity.back();
@@ -114,21 +113,21 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     const auto yaw_plan = yaw_mpc_->plan(yaw, &yaw_velocity);
     const auto pitch_plan = pitch_mpc_->plan(pitch, &pitch_velocity);
     if (!yaw_plan || !pitch_plan) return reject("invalid_mpc_output");
-    command.yaw = std::remainder(yaw_plan->position + yaw0 * RAD_TO_DEG, 360.0);
+    command.yaw = std::remainder(yaw_plan->position + yaw0, 2.0 * M_PI);
     command.pitch = pitch_plan->position;
-    command.yaw_vel_deg_s = yaw_plan->velocity;
-    command.pitch_vel_deg_s = pitch_plan->velocity;
-    command.yaw_acc_deg_s2 = yaw_plan->acceleration;
-    command.pitch_acc_deg_s2 = pitch_plan->acceleration;
+    command.yaw_vel_rad_s = yaw_plan->velocity;
+    command.pitch_vel_rad_s = pitch_plan->velocity;
+    command.yaw_acc_rad_s2 = yaw_plan->acceleration;
+    command.pitch_acc_rad_s2 = pitch_plan->acceleration;
     // 与济瞄 plan.fire 一致：中点后2拍的参考与规划误差，阈值单位 rad。
     const int fire_index = half + 2;
     command.fire_advice = std::hypot(
         yaw[fire_index] - yaw_mpc_->sample_at(fire_index).position,
         pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position)
-        / RAD_TO_DEG < fire_thresh_;
+        < fire_thresh_;
     // 实际反馈仅用于误差诊断，不作为规划或开火门槛。
     if (feedback_) {
-        command.yaw_diff = std::remainder(command.yaw - feedback_->yaw, 360.0);
+        command.yaw_diff = std::remainder(command.yaw - feedback_->yaw, 2.0 * M_PI);
         command.pitch_diff = command.pitch - feedback_->pitch;
     }
     command.header.stamp = now + rclcpp::Duration::from_seconds(predict2send_delay_);

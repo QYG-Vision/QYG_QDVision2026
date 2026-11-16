@@ -36,8 +36,8 @@ ArmorPoseEstimator::ArmorPoseEstimator(sensor_msgs::msg::CameraInfo::SharedPtr c
     R_gimbal_camera_ = Eigen::Matrix3d::Identity();
     R_gimbal_camera_ << 0, 0, 1, -1, 0, 0, 0, -1, 0;
 
-    // 默认最大偏航角为60度
-    max_yaw_angle_ = 60.0;
+    // 默认最大偏航角阈值，rad
+    max_yaw_angle_ = 1.0471975511965976;
 }
 
 ArmorPoseEstimator::ArmorPoseEstimator() {
@@ -54,8 +54,8 @@ ArmorPoseEstimator::ArmorPoseEstimator() {
     R_gimbal_camera_ = Eigen::Matrix3d::Identity();
     R_gimbal_camera_ << 0, 0, 1, -1, 0, 0, 0, -1, 0;
 
-    // 默认最大偏航角为60度
-    max_yaw_angle_ = 60.0;
+    // 默认最大偏航角阈值，rad
+    max_yaw_angle_ = 1.0471975511965976;
 }
 
 void ArmorPoseEstimator::setCameraParame(cv::Mat& camera_matrix, cv::Mat& distortion_coefficients) {
@@ -95,23 +95,23 @@ std::vector<rm_interfaces::msg::Armor> ArmorPoseEstimator::extractArmorPoses(
 
             // 计算装甲板在云台坐标系下的RPY角
             auto rpy = rotationMatrixToRPY(R_gimbal_camera_ * R);
-            double yaw_deg = std::abs(rpy[2] * 180.0 / M_PI);
+            double yaw_rad = std::abs(rpy[2]);
 
             // 过滤大朝向角装甲板
-            if (yaw_deg > max_yaw_angle_) {
+            if (yaw_rad > max_yaw_angle_) {
                 FYT_DEBUG(
                     "armor_detector",
-                    "Filtered armor with yaw angle: {:.2f} deg (threshold: {:.2f} deg)",
-                    yaw_deg,
+                    "Filtered armor with yaw angle: {:.2f} rad (threshold: {:.2f} rad)",
+                    yaw_rad,
                     max_yaw_angle_
                 );
                 continue;
             }
 
             /*       double armor_roll =
-          rotationMatrixToRPY(R_gimbal_camera_ * R)[0] * 180 / M_PI;
+          rotationMatrixToRPY(R_gimbal_camera_ * R)[0];
 
-      if (use_ba_ && armor_roll < 15) {
+      if (use_ba_ && armor_roll < M_PI / 12.0) {
         // Use BA alogorithm to optimize the pose from PnP
         // solveBa() will modify the rotation_matrix
         R = ba_solver_->solveBa(armor, t, R, R_imu_camera);
@@ -225,17 +225,17 @@ void ArmorPoseEstimator::sortPnPResult(
         pnp_solver_->calculateReprojectionError(armor.landmarks(), rvec2, tvec2, coord_frame_name);
 
     // 两个解的重投影误差差距较大或者roll角度较大时，不做选择
-    if ((error2 / error1 > PROJECT_ERR_THRES) || (rpy1[0] > 10 * 180 / M_PI)
-        || (rpy2[0] > 10 * 180 / M_PI))
+    if ((error2 / error1 > PROJECT_ERR_THRES) || (rpy1[0] > 572.9577951308232)
+        || (rpy2[0] > 572.9577951308232))
     {
         return;
     }
 
     // 计算灯条在图像中的倾斜角度
-    double l_angle = std::atan2(armor.left_light.axis.y, armor.left_light.axis.x) * 180 / M_PI;
-    double r_angle = std::atan2(armor.right_light.axis.y, armor.right_light.axis.x) * 180 / M_PI;
+    double l_angle = std::atan2(armor.left_light.axis.y, armor.left_light.axis.x);
+    double r_angle = std::atan2(armor.right_light.axis.y, armor.right_light.axis.x);
     double angle = (l_angle + r_angle) / 2;
-    angle += 90.0;
+    angle += M_PI / 2.0;
 
     if (armor.number == "outpost")
         angle = -angle;

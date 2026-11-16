@@ -42,8 +42,8 @@ AxisMpc::AxisMpc(const Config& config) : impl_(std::make_unique<Impl>(config)) {
     tinyMatrix lower = tinyMatrix::Constant(2, c.horizon, -1e17);
     tinyMatrix upper = -lower;
     if (tiny_set_bound_constraints(solver, lower, upper,
-            tinyMatrix::Constant(1, c.horizon - 1, -c.max_acceleration * M_PI / 180.0),
-            tinyMatrix::Constant(1, c.horizon - 1, c.max_acceleration * M_PI / 180.0)) != 0) return;
+            tinyMatrix::Constant(1, c.horizon - 1, -c.max_acceleration),
+            tinyMatrix::Constant(1, c.horizon - 1, c.max_acceleration)) != 0) return;
     solver->settings->max_iter = c.max_iterations;
     impl_->valid = solver->cache->Pinf.allFinite() && solver->cache->Kinf.allFinite()
         && solver->cache->Quu_inv.allFinite() && lower.allFinite() && upper.allFinite()
@@ -65,10 +65,10 @@ std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& referenc
     for (int k = 0; k < c.horizon; ++k) {
         const int left = k == 0 ? 0 : k - 1;
         const int right = k == c.horizon - 1 ? k : k + 1;
-        w->Xref(0, k) = reference[k] * M_PI / 180.0;
+        w->Xref(0, k) = reference[k];
         const double velocity = velocities ? (*velocities)[k]
             : (reference[right] - reference[left]) / ((right - left) * c.dt);
-        w->Xref(1, k) = velocity * M_PI / 180.0;
+        w->Xref(1, k) = velocity;
     }
     if (!w->Xref.allFinite() || !w->x.allFinite()) return std::nullopt;
     tinyVector initial(2);
@@ -84,9 +84,7 @@ std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& referenc
 }
 AxisMpc::Sample AxisMpc::sample_at(int index) const {
     const auto* w = impl_->solver->work;
-    constexpr double RAD_TO_DEG = 180.0 / M_PI;
-    return {w->x(0, index) * RAD_TO_DEG, w->x(1, index) * RAD_TO_DEG,
-            w->u(0, index) * RAD_TO_DEG};
+    return {w->x(0, index), w->x(1, index), w->u(0, index)};
 }
 } // namespace qd::auto_aim
 

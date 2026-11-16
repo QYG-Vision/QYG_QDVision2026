@@ -32,14 +32,14 @@
 * `binary_thres` (`int`, default: 100) - 二值化阈值
 * `light.min_ratio` (`double`, default: 0.08) - 灯条最小长宽比
 * `light.max_ratio` (`double`, default: 0.4) - 灯条最大长宽比
-* `light.max_angle` (`double`, default: 40) - 灯条最大倾斜角度
+* `light.max_angle` (`double`, default: 0.6981317007977318) - 灯条最大倾斜角，rad
 * `light.color_diff_thresh` (`int`, default: 25) - 灯条颜色差异阈值`
 * `armor.min_light_ratio` (`double`, default: 0.6) - 装甲板最小长宽比
 * `armor.min_small_center_distance` (`double`, default: 0.8) - 小装甲板最小中心距离长宽比
 * `armor.max_small_center_distance` (`double`, default: 3.2) - 小装甲板最大中心距离长宽比
 * `armor.min_large_center_distance` (`double`, default: 1.8) - 大装甲板最小中心距离长宽比
 * `armor.max_large_center_distance` (`double`, default: 6.4) - 大装甲板最大中心距离长宽比
-* `armor.max_angle` (`double`, default: 35.0) - 装甲板最大倾斜角度
+* `armor.max_angle` (`double`, default: 0.6108652381980153) - 装甲板最大倾斜角，rad
 
 
 ## Detector

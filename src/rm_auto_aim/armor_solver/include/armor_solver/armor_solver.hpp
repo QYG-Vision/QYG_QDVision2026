@@ -151,7 +151,7 @@ public:
 
     /**
      * @brief 缓存 V2 姿态/角速度及其采样时间，供 MPC 初始化。
-     * @param feedback odom 中的绝对姿态及姿态角速度，degree、degree/s，Pitch 向下为正。
+     * @param feedback odom 中的绝对姿态及姿态角速度，rad、rad/s，Pitch 向下为正。
      * @note 与 solve() 共用 solver_state_mutex_。
      */
     void update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback);

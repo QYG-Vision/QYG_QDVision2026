@@ -71,11 +71,11 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
     mpc_config_.max_acceleration =
-        node->declare_parameter("solver.mpc.yaw.max_acceleration", 2864.7889756541163);
+        node->declare_parameter("solver.mpc.yaw.max_acceleration", 50.0);
     yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
     auto pitch_config = mpc_config_;
     pitch_config.max_acceleration =
-        node->declare_parameter("solver.mpc.pitch.max_acceleration", 5729.5779513082325);
+        node->declare_parameter("solver.mpc.pitch.max_acceleration", 100.0);
     pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
 
     node.reset();
@@ -376,8 +376,8 @@ YpdCoord Solver::aim_xyz_to_aim_ypd(const Eigen::Vector3d& xyz) {
     YpdCoord aim_ypd = xyz_to_ypd(xyz);
 
     auto angle_offset = manual_compensator_->angleHardCorrect(xyz.head(2).norm(), xyz.z());
-    double pitch_offset = angle_offset[0] * M_PI / 180;
-    double yaw_offset = angle_offset[1] * M_PI / 180;
+    double pitch_offset = angle_offset[0];
+    double yaw_offset = angle_offset[1];
 
     // NEED DEBUG
     return { reduced_angle(aim_ypd.yaw + yaw_offset),

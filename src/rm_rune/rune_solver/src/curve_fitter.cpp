@@ -290,7 +290,7 @@ void CurveFitter::update(double time, double angle) {
 
   // Check if the target is moving or static
   double angle_diff = data_history_queue_.back().angle - data_history_queue_.front().angle;
-  if (std::abs(angle_diff) < 2 * CV_PI / 180) {
+  if (std::abs(angle_diff) < 0.03490658503988659) {
     is_static_ = true;
     data_history_queue_.pop_front();
   } else {

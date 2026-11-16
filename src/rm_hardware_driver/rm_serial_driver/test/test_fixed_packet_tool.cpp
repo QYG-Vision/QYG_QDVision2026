@@ -105,13 +105,13 @@ public:
 
 TEST(FixedPacketTool, v2SplitStickyNoiseAndEmbeddedDelimiters) {
     auto transport = std::make_shared<ChunkTransporter>();
-    serial_driver::FixedPacketTool<24> tool(transport);
-    serial_driver::FixedPacket<24> received;
-    std::vector<uint8_t> frame(24, 0);
+    serial_driver::FixedPacketTool<32> tool(transport);
+    serial_driver::FixedPacket<32> received;
+    std::vector<uint8_t> frame(32, 0);
     frame[0] = 0xfe;
     frame[5] = 0xfe;
     frame[6] = 0x0d;
-    frame[23] = 0x0d;
+    frame[31] = 0x0d;
     transport->chunks.push_back({0x55, 0x66, 0xff});
     transport->chunks.emplace_back(frame.begin(), frame.begin() + 7);
     transport->chunks.emplace_back(frame.begin() + 7, frame.end());
@@ -129,30 +129,30 @@ TEST(FixedPacketTool, v2SplitStickyNoiseAndEmbeddedDelimiters) {
 
 TEST(FixedPacketTool, rejectsV1AndBadTailThenResynchronizes) {
     auto transport = std::make_shared<ChunkTransporter>();
-    serial_driver::FixedPacketTool<24> tool(transport);
-    serial_driver::FixedPacket<24> received;
+    serial_driver::FixedPacketTool<32> tool(transport);
+    serial_driver::FixedPacket<32> received;
     std::vector<uint8_t> old(16, 0);
     old[0] = 0xff;
     old[15] = 0x0d;
     transport->chunks.push_back(old);
     EXPECT_FALSE(tool.recvPacket(received));
-    std::vector<uint8_t> bad(24, 0);
+    std::vector<uint8_t> bad(32, 0);
     bad[0] = 0xfe;
     transport->chunks.push_back(bad);
     EXPECT_FALSE(tool.recvPacket(received));
-    bad[23] = 0x0d;
+    bad[31] = 0x0d;
     transport->chunks.push_back(bad);
     ASSERT_TRUE(tool.recvPacket(received));
     EXPECT_TRUE(std::equal(bad.begin(), bad.end(), received.buffer()));
 }
 
-TEST(FixedPacketTool, sends32BytesWhileReceiving24OnSameTransport) {
+TEST(FixedPacketTool, sends40BytesWhileReceiving32OnSameTransport) {
     auto transport = std::make_shared<ChunkTransporter>();
-    serial_driver::FixedPacketTool<24> tool(transport);
-    serial_driver::FixedPacket<32> outgoing;
+    serial_driver::FixedPacketTool<32> tool(transport);
+    serial_driver::FixedPacket<40> outgoing;
     ASSERT_TRUE(tool.sendPacket(outgoing));
-    ASSERT_EQ(transport->sent.size(), 32U);
+    ASSERT_EQ(transport->sent.size(), 40U);
     EXPECT_EQ(transport->sent[0], 0xfe);
-    EXPECT_EQ(transport->sent[31], 0x0d);
+    EXPECT_EQ(transport->sent[39], 0x0d);
 }
 } // namespace

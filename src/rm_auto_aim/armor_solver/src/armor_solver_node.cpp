@@ -222,11 +222,10 @@ void ArmorSolverNode::timerCallback() {
             }
 
             if (const auto debug = solver_->get_ballistic_debug()) {
-                constexpr double RAD_TO_DEG = 180.0 / M_PI;
                 rm_interfaces::msg::BallisticDebug debug_msg;
                 debug_msg.header = control_msg.header;
-                debug_msg.geometric_pitch = debug->geometric_pitch_rad * RAD_TO_DEG;
-                debug_msg.compensated_pitch = debug->compensated_pitch_rad * RAD_TO_DEG;
+                debug_msg.geometric_pitch = debug->geometric_pitch_rad;
+                debug_msg.compensated_pitch = debug->compensated_pitch_rad;
                 debug_msg.delta_pitch =
                     debug_msg.compensated_pitch - debug_msg.geometric_pitch;
                 debug_msg.ballistic_enabled = debug->ballistic_enabled;
@@ -871,10 +870,10 @@ void ArmorSolverNode::publishMarkers(
         // 瞄准点位置
         selection_marker_.action = visualization_msgs::msg::Marker::ADD;
         selection_marker_.points.clear();
-        selection_marker_.pose.position.y = gimbal_cmd.distance * sin(gimbal_cmd.yaw * M_PI / 180);
-        selection_marker_.pose.position.x = gimbal_cmd.distance * cos(gimbal_cmd.yaw * M_PI / 180);
+        selection_marker_.pose.position.y = gimbal_cmd.distance * sin(gimbal_cmd.yaw);
+        selection_marker_.pose.position.x = gimbal_cmd.distance * cos(gimbal_cmd.yaw);
         selection_marker_.pose.position.z =
-            -gimbal_cmd.distance * sin(gimbal_cmd.pitch * M_PI / 180);
+            -gimbal_cmd.distance * sin(gimbal_cmd.pitch);
 
         // 预测弹道位置
         trajectory_marker_.action = visualization_msgs::msg::Marker::ADD;

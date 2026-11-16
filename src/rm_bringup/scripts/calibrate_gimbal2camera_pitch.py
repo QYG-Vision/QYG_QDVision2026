@@ -221,7 +221,7 @@ class Gimbal2CameraPitchCalibrator(Node):
 
             if step_idx % 50 == 0 or step_idx == n_steps - 1:
                 self.get_logger().debug(
-                    f'  pitch={pitch:.4f} rad ({math.degrees(pitch):.2f} deg), '
+                    f'  pitch={pitch:.4f} rad, '
                     f'z_var={variance:.6f}, z_mean={np.mean(z_values):.4f}')
 
         # 输出结果
@@ -236,8 +236,7 @@ class Gimbal2CameraPitchCalibrator(Node):
                 f'Best pitch is on the search {boundary} boundary; calibration did not converge '
                 'to an interior minimum. Check pitch range, sample quality, and TF direction.')
         self.get_logger().info(
-            f'  Optimal gimbal2camera pitch: {best_pitch:.6f} rad '
-            f'({math.degrees(best_pitch):.4f} deg)')
+            f'  Optimal gimbal2camera pitch: {best_pitch:.6f} rad')
         self.get_logger().info(
             f'  Z variance at optimum:        {best_variance:.6f}')
         if best_z_values is not None:
@@ -248,8 +247,7 @@ class Gimbal2CameraPitchCalibrator(Node):
         current_pitch = self.get_parameter('gimbal2camera_pitch').value
         current_variance, _ = evaluate_pitch(current_pitch)
         self.get_logger().info(
-            f'  Current config pitch:         {current_pitch:.6f} rad '
-            f'({math.degrees(current_pitch):.4f} deg)')
+            f'  Current config pitch:         {current_pitch:.6f} rad')
         self.get_logger().info(
             f'  Z variance at current config: {current_variance:.6f}')
         self.get_logger().info('=' * 60)

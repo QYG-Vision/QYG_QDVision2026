@@ -9,9 +9,9 @@
 namespace qd::auto_aim {
 TEST(AxisMpc, holdsStationaryReferenceAtWindowCenter) {
     AxisMpc mpc(AxisMpc::Config{});
-    const auto sample = mpc.plan(std::vector<double>(100, 10.0));
+    const auto sample = mpc.plan(std::vector<double>(100, 0.17453292519943295));
     ASSERT_TRUE(sample);
-    EXPECT_NEAR(sample->position, 10.0, 1e-6);
+    EXPECT_NEAR(sample->position, 0.17453292519943295, 1e-6);
     EXPECT_NEAR(sample->velocity, 0.0, 1e-4);
     EXPECT_NEAR(sample->acceleration, 0.0, 1e-2);
 }
@@ -21,12 +21,12 @@ TEST(AxisMpc, tracksConstantVelocityReference) {
     AxisMpc mpc(config);
     std::vector<double> reference(config.horizon);
     for (int k = 0; k < config.horizon; ++k) {
-        reference[k] = 5.0 + 30.0 * k * config.dt;
+        reference[k] = 0.08726646259971647 + 0.5235987755982988 * k * config.dt;
     }
     const auto sample = mpc.plan(reference);
     ASSERT_TRUE(sample);
     EXPECT_NEAR(sample->position, reference[config.horizon / 2], 1e-5);
-    EXPECT_NEAR(sample->velocity, 30.0, 1e-5);
+    EXPECT_NEAR(sample->velocity, 0.5235987755982988, 1e-5);
     EXPECT_NEAR(sample->acceleration, 0.0, 1e-4);
 }
 
@@ -35,7 +35,7 @@ TEST(AxisMpc, respectsAccelerationBound) {
     AxisMpc mpc(config);
     std::vector<double> reference(config.horizon, 0.0);
     for (int k = config.horizon / 2; k < config.horizon; ++k) {
-        reference[k] = 90.0;
+        reference[k] = M_PI / 2.0;
     }
     const auto sample = mpc.plan(reference);
     ASSERT_TRUE(sample);
@@ -43,8 +43,8 @@ TEST(AxisMpc, respectsAccelerationBound) {
 }
 
 TEST(AxisMpc, unwrapsYawAcrossSeam) {
-    EXPECT_DOUBLE_EQ(unwrap_degrees(-179.0, 179.0), 181.0);
-    EXPECT_DOUBLE_EQ(unwrap_degrees(179.0, -179.0), -181.0);
+    EXPECT_NEAR(unwrap_radians(-M_PI + 0.01, M_PI - 0.01), M_PI + 0.01, 1e-14);
+    EXPECT_NEAR(unwrap_radians(M_PI - 0.01, -M_PI + 0.01), -M_PI - 0.01, 1e-14);
 }
 
 TEST(AxisMpc, rejectsBadInputAndConfiguration) {
@@ -62,7 +62,7 @@ TEST(AxisMpc, rejectsBadInputAndConfiguration) {
 } // namespace qd::auto_aim
 
 namespace qd::auto_aim {
-// 直接复现济瞄 setup/plan 调用，检验单位转换、保留工作状态和有限迭代输出。
+// 直接复现济瞄 setup/plan 调用，检验弧度接口、保留工作状态和有限迭代输出。
 TEST(AxisMpc, matchesTongjiDirectSolveAcrossRepeatedSwitches) {
     TinySolver* solver = nullptr;
     Eigen::MatrixXd a(2, 2), b(2, 1);
@@ -79,24 +79,25 @@ TEST(AxisMpc, matchesTongjiDirectSolveAcrossRepeatedSwitches) {
     for (int round = 0; round < 3; ++round) {
         std::vector<double> angles(100), velocities(100);
         const auto angle = [&](int k) {
-            return (k < 55 - round * 5 ? 0.02 * k : -2.0 + 0.03 * k) * (round + 1);
+            return (k < 55 - round * 5 ? 0.00034906585039886593 * k
+                : -0.03490658503988659 + 0.0005235987755982988 * k) * (round + 1);
         };
         for (int k = 0; k < 100; ++k) {
             angles[k] = angle(k);
             velocities[k] = (angle(k + 1) - angle(k - 1)) / 0.02;
-            solver->work->Xref(0, k) = angles[k] * M_PI / 180;
-            solver->work->Xref(1, k) = velocities[k] * M_PI / 180;
+            solver->work->Xref(0, k) = angles[k];
+            solver->work->Xref(1, k) = velocities[k];
         }
         Eigen::Vector2d initial = solver->work->Xref.col(0);
         tiny_set_x0(solver, initial);
         tiny_solve(solver);
         const auto sample = mpc.plan(angles, &velocities);
         ASSERT_TRUE(sample);
-        EXPECT_NEAR(sample->position, solver->work->x(0, 50) * 180 / M_PI, 1e-7);
-        EXPECT_NEAR(sample->velocity, solver->work->x(1, 50) * 180 / M_PI, 1e-7);
-        EXPECT_NEAR(sample->acceleration, solver->work->u(0, 50) * 180 / M_PI, 1e-6);
+        EXPECT_NEAR(sample->position, solver->work->x(0, 50), 1e-7);
+        EXPECT_NEAR(sample->velocity, solver->work->x(1, 50), 1e-7);
+        EXPECT_NEAR(sample->acceleration, solver->work->u(0, 50), 1e-6);
         EXPECT_NEAR(mpc.sample_at(52).position,
-                    solver->work->x(0, 52) * 180 / M_PI, 1e-7);
+                    solver->work->x(0, 52), 1e-7);
     }
     delete solver->solution;
     delete solver->cache;

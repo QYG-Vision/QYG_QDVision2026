@@ -1,3 +1,5 @@
+#include <array>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <vector>
@@ -7,6 +9,8 @@
 #include "rm_utils/time_synchronizer.hpp"
 
 namespace {
+namespace v2 = qd::serial_driver::v2;
+
 class TestProtocol : public qd::serial_driver::protocol::Protocol {
 public:
     using Protocol::encodeGimbalCommand;
@@ -20,124 +24,163 @@ public:
     std::string getErrorMessage() override { return {}; }
 };
 
+/**
+ * @brief 构造各轴同一时刻、以弧度及其导数表示的完整规划参考。
+ * @return 用于独立字节样例核对的有效规划消息。
+ */
 rm_interfaces::msg::GimbalCmd reference() {
     rm_interfaces::msg::GimbalCmd command;
     command.reference_valid = true;
     command.fire_advice = true;
-    command.yaw = 21.9;
-    command.pitch = -11.5;
+    command.yaw = 0.5;
+    command.pitch = -0.25;
     command.distance = 1.25;
     command.id = "3";
-    command.target_v_yaw = 1.23;
-    command.yaw_vel_deg_s = 1.0f;
-    command.pitch_vel_deg_s = -1.0f;
-    command.yaw_acc_deg_s2 = 1000.0f;
-    command.pitch_acc_deg_s2 = -1000.0f;
+    command.target_v_yaw = 0.125;
+    command.yaw_vel_rad_s = 1.0f;
+    command.pitch_vel_rad_s = -1.0f;
+    command.yaw_acc_rad_s2 = 2.0f;
+    command.pitch_acc_rad_s2 = -2.0f;
     return command;
 }
 
-TEST(ProtocolEncoding, matchesIndependentGoldenCommand) {
+const v2::CommandFrame INVALID_COMMAND{
+    0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0xbf, 0x80, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d
+};
+const v2::FeedbackFrame FEEDBACK{
+    0xfe, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x3e, 0x80,
+    0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x41, 0x80,
+    0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x3f, 0x00,
+    0x00, 0x00, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x0d
+};
+
+TEST(ProtocolEncoding, matchesIndependent40ByteGoldenCommand) {
     TestProtocol protocol;
-    const auto packet = protocol.encodeGimbalCommand(reference());
-    const qd::serial_driver::v2::CommandFrame expected{
-        0xfe, 1, 0x08, 0x8e, 0xfb, 0x82, 0, 0x7d, 3, 0, 0x7b, 1, 0, 0,
-        0x3f, 0x80, 0, 0, 0xbf, 0x80, 0, 0,
-        0x44, 0x7a, 0, 0, 0xc4, 0x7a, 0, 0, 0, 0x0d};
-    EXPECT_EQ(packet, expected);
+    const v2::CommandFrame expected{
+        0xfe, 0x01, 0x3f, 0x00, 0x00, 0x00, 0xbe, 0x80,
+        0x00, 0x00, 0x3f, 0xa0, 0x00, 0x00, 0x03, 0x3e,
+        0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x3f, 0x80,
+        0x00, 0x00, 0xbf, 0x80, 0x00, 0x00, 0x40, 0x00,
+        0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x0d
+    };
+    EXPECT_EQ(sizeof(v2::CommandFrame), 40U);
+    EXPECT_EQ(sizeof(v2::FeedbackFrame), 32U);
+    EXPECT_EQ(protocol.encodeGimbalCommand(reference()), expected);
 }
 
-TEST(ProtocolEncoding, rejectsMissingPlanningAndInvalidFields) {
+TEST(ProtocolEncoding, rejectsMissingPlanningAndNonpositiveOrUnderflowingDistance) {
     TestProtocol protocol;
     auto command = reference();
     command.reference_valid = false;
-    const qd::serial_driver::v2::CommandFrame invalid{
-        0xfe, 0, 0, 0, 0, 0, 0xff, 0x9c, 0, 0, 0, 0, 0, 0,
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x0d};
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), invalid);
-    command = reference();
-    command.yaw_acc_deg_s2 = std::numeric_limits<float>::infinity();
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), invalid);
-    command = reference();
-    command.pitch = std::numeric_limits<double>::quiet_NaN();
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), invalid);
-    command = reference();
-    command.distance = 0;
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), invalid);
-    command.distance = 0.001;
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), invalid);
+    EXPECT_EQ(protocol.encodeGimbalCommand(command), INVALID_COMMAND);
+    for (const double distance : {0.0, -1.0, 1e-300}) {
+        command = reference();
+        command.distance = distance;
+        EXPECT_EQ(protocol.encodeGimbalCommand(command), INVALID_COMMAND);
+    }
 }
 
-TEST(ProtocolEncoding, truncatesAndSaturatesFixedPointWithoutSaturatingDerivatives) {
+TEST(ProtocolEncoding, preservesDirectFloatValuesAndSmallPositiveDistance) {
     TestProtocol protocol;
     auto command = reference();
-    command.yaw = 1000;
-    command.pitch = -1000;
-    command.distance = 1.239;
+    command.yaw = 1000.125;
+    command.pitch = -1000.125;
+    command.target_v_yaw = 10000.125;
+    command.distance = 0.001;
+    command.yaw_acc_rad_s2 = 1000.0f;
     const auto packet = protocol.encodeGimbalCommand(command);
-    EXPECT_EQ(packet[2], 0x7f);
-    EXPECT_EQ(packet[3], 0xff);
-    EXPECT_EQ(packet[4], 0x80);
-    EXPECT_EQ(packet[5], 0);
-    EXPECT_EQ(packet[7], 123);
-    EXPECT_FLOAT_EQ(qd::serial_driver::v2::getFloat(packet.data() + 22), 1000.0f);
+    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 2), 1000.125f);
+    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 6), -1000.125f);
+    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 10), 0.001f);
+    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 15), 10000.125f);
+    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 30), 1000.0f);
+    EXPECT_EQ(packet[19], 1);
 }
 
-TEST(ProtocolEncoding, rejectsDerivativeFloatOverflowBeforeConversion) {
+TEST(ProtocolEncoding, rejectsNonfiniteAndOverflowInEveryPhysicalField) {
     struct WideCommand {
         bool reference_valid = true;
         bool fire_advice = true;
         double yaw = 0, pitch = 0, distance = 1, target_v_yaw = 0;
-        double yaw_vel_deg_s = 1e300, pitch_vel_deg_s = 0;
-        double yaw_acc_deg_s2 = 0, pitch_acc_deg_s2 = 0;
-    } command;
-    const auto packet = qd::serial_driver::v2::encode(command, 1);
-    EXPECT_EQ(packet[11], 0);
-    EXPECT_EQ(packet[1], 0);
+        double yaw_vel_rad_s = 0, pitch_vel_rad_s = 0;
+        double yaw_acc_rad_s2 = 0, pitch_acc_rad_s2 = 0;
+    };
+    const std::array<double WideCommand::*, 8> fields{
+        &WideCommand::yaw, &WideCommand::pitch, &WideCommand::distance,
+        &WideCommand::target_v_yaw, &WideCommand::yaw_vel_rad_s,
+        &WideCommand::pitch_vel_rad_s, &WideCommand::yaw_acc_rad_s2,
+        &WideCommand::pitch_acc_rad_s2
+    };
+    for (const double invalid : {std::numeric_limits<double>::quiet_NaN(),
+                                 std::numeric_limits<double>::infinity(),
+                                 -std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
+        for (const auto field : fields) {
+            WideCommand command;
+            command.*field = invalid;
+            EXPECT_EQ(v2::encode(command, 1), INVALID_COMMAND);
+        }
+    }
+    EXPECT_EQ(v2::encode(WideCommand{}, 10), INVALID_COMMAND);
 }
 
-qd::serial_driver::v2::FeedbackFrame feedback() {
-    return {0xfe, 1, 0xff, 0x9c, 0, 0xc8, 0x46, 0x50, 0x06, 0x40,
-            0x12, 0x34, 0x56, 0x78, 0x3f, 0x80, 0, 0, 0xbf, 0x80, 0, 0, 0, 0x0d};
-}
-
-TEST(ProtocolEncoding, decodesGoldenFeedbackAndRejectsWithoutMutation) {
+TEST(ProtocolEncoding, decodes32ByteGoldenFeedbackAndRejectsWithoutMutation) {
     TestProtocol protocol;
     rm_interfaces::msg::SerialReceiveData data;
-    ASSERT_TRUE(protocol.decodeFeedback(feedback(), data));
+    ASSERT_TRUE(protocol.decodeFeedback(FEEDBACK, data));
     EXPECT_EQ(data.mode, 1);
-    EXPECT_FLOAT_EQ(data.roll, -1);
-    EXPECT_FLOAT_EQ(data.pitch, 2);
-    EXPECT_FLOAT_EQ(data.yaw, 180);
-    EXPECT_FLOAT_EQ(data.bullet_speed, 16);
+    EXPECT_FLOAT_EQ(data.roll, -0.125f);
+    EXPECT_FLOAT_EQ(data.pitch, 0.25f);
+    EXPECT_FLOAT_EQ(data.yaw, 1.0f);
+    EXPECT_FLOAT_EQ(data.bullet_speed, 16.0f);
     EXPECT_EQ(data.mcu_timestamp, 0x12345678U);
-    EXPECT_FLOAT_EQ(data.yaw_actual_vel_deg_s, 1);
-    EXPECT_FLOAT_EQ(data.pitch_actual_vel_deg_s, -1);
+    EXPECT_FLOAT_EQ(data.yaw_actual_vel_rad_s, 0.5f);
+    EXPECT_FLOAT_EQ(data.pitch_actual_vel_rad_s, -0.5f);
     const auto original = data;
-    for (const auto index : {0, 1, 23}) {
-        auto bad = feedback();
+    for (const auto index : {0, 1, 31}) {
+        auto bad = FEEDBACK;
         bad[index] = 0xff;
         EXPECT_FALSE(protocol.decodeFeedback(bad, data));
         EXPECT_EQ(data, original);
     }
-    for (const auto offset : {14, 18}) {
-        for (const float bad_value : {std::numeric_limits<float>::infinity(),
-                                     std::numeric_limits<float>::quiet_NaN()}) {
-            auto bad = feedback();
-            qd::serial_driver::v2::putFloat(bad.data() + offset, bad_value);
+    for (const auto offset : {2, 6, 10, 14, 22, 26}) {
+        for (const float invalid : {std::numeric_limits<float>::infinity(),
+                                    -std::numeric_limits<float>::infinity(),
+                                    std::numeric_limits<float>::quiet_NaN()}) {
+            auto bad = FEEDBACK;
+            v2::putFloat(bad.data() + offset, invalid);
             EXPECT_FALSE(protocol.decodeFeedback(bad, data));
             EXPECT_EQ(data, original);
         }
     }
+    ASSERT_TRUE(protocol.decodeFeedback(FEEDBACK, data));
+    EXPECT_EQ(data, original);
 }
 
 TEST(ProtocolEncoding, energyModesCannotSendValidReferences) {
     TestProtocol protocol;
     rm_interfaces::msg::SerialReceiveData data;
     for (uint8_t mode = 0; mode <= 5; ++mode) {
-        auto frame = feedback();
+        auto frame = FEEDBACK;
         frame[1] = mode;
         ASSERT_TRUE(protocol.decodeFeedback(frame, data));
-        EXPECT_EQ(protocol.encodeGimbalCommand(reference())[11], mode <= 1 ? 1 : 0);
+        const auto command = protocol.encodeGimbalCommand(reference());
+        EXPECT_EQ(command[19], mode <= 1 ? 1 : 0);
+        if (mode > 1) EXPECT_EQ(command, INVALID_COMMAND);
+    }
+}
+
+TEST(ProtocolEncoding, acceptsTimestampZeroAndMaximum) {
+    TestProtocol protocol;
+    rm_interfaces::msg::SerialReceiveData data;
+    for (const uint32_t timestamp : {0U, std::numeric_limits<uint32_t>::max()}) {
+        auto frame = FEEDBACK;
+        v2::put(frame.data() + 18, timestamp, 4);
+        ASSERT_TRUE(protocol.decodeFeedback(frame, data));
+        EXPECT_EQ(data.mcu_timestamp, timestamp);
     }
 }
 

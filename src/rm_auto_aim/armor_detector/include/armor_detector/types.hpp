@@ -39,8 +39,8 @@ constexpr double SMALL_ARMOR_HEIGHT = 55. / 1000.0; // 55  50 50
 constexpr double LARGE_ARMOR_WIDTH = 225.0 / 1000.0;
 constexpr double LARGE_ARMOR_HEIGHT = 55.0 / 1000.0; // 55  50
 
-// 15 degree in rad
-constexpr double FIFTTEN_DEGREE_RAD = 15 * CV_PI / 180;
+// 固定装甲板倾角，rad
+constexpr double FIFTTEN_DEGREE_RAD = CV_PI / 12.0;
 
 // Armor type
 enum class ArmorType { SMALL, LARGE, INVALID };
@@ -87,7 +87,6 @@ struct Light: public cv::RotatedRect {
         // Calculate the tilt angle
         // The angle is the angle between the light bar and the horizontal line
         tilt_angle = std::atan2(std::abs(top.x - bottom.x), std::abs(top.y - bottom.y));
-        tilt_angle = tilt_angle / CV_PI * 180;
     }
     EnemyColor color;
     cv::Point2f top, bottom, center;

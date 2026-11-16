@@ -67,6 +67,12 @@ namespace qd {
 
       ManualCompensator() = default;
 
+      /**
+       * @brief 查询目标位置对应的手动角度补偿。
+       * @param dist 目标水平距离，m。
+       * @param height 目标相对高度，m。
+       * @return 按 pitch、yaw 排列的补偿值，rad；无匹配区域时为零。
+       */
       std::vector<double> angleHardCorrect(const double dist, const double height);
 
       bool updateMap(const LineRegion& d_region,
