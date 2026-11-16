@@ -48,7 +48,10 @@ public:
     // 为 pnp_solver 设置相机参数，无参构造才需要
     void setCameraParame(cv::Mat& camera_matrix, cv::Mat& distortion_coefficients);
 
-    // 设置最大偏航角阈值（单位：度）
+    /**
+     * @brief 设置装甲板朝向的最大偏航角阈值。
+     * @param max_yaw_angle 云台坐标系下偏航角绝对值上限，rad。
+     */
     void setMaxYawAngle(double max_yaw_angle) {
         max_yaw_angle_ = max_yaw_angle;
     }
@@ -65,7 +68,7 @@ private:
 
     Eigen::Matrix3d R_gimbal_camera_;
 
-    // 最大偏航角阈值（单位：度），用于过滤大朝向角装甲板
+    // 最大偏航角阈值（单位：rad），用于过滤大朝向角装甲板
     double max_yaw_angle_;
 
     // std::unique_ptr<BaSolver> ba_solver_;

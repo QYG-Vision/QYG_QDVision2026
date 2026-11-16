@@ -60,8 +60,11 @@ TEST_F(UartTransporterTest, preserves_binary_frame_with_inherited_parmrk) {
     ASSERT_EQ(tcgetattr(slave_fd_, &options), 0);
     EXPECT_EQ(options.c_iflag & PARMRK, 0U);
 
-    const std::array<uint8_t, 16> frame { 0xff, 0x00, 0x00, 0x23, 0x08, 0x0d, 0xff, 0xf4,
-                                          0x05, 0xdc, 0x00, 0x02, 0xd2, 0xc5, 0x00, 0x0d };
+    const std::array<uint8_t, 24> frame{
+        0xff, 0x01, 0xbe, 0xff, 0x0d, 0x00, 0x3e, 0x80,
+        0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x41, 0x80,
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x0d
+    };
     ASSERT_EQ(::write(master_fd_, frame.data(), frame.size()), static_cast<ssize_t>(frame.size()));
 
     struct pollfd readable {
@@ -76,11 +79,14 @@ TEST_F(UartTransporterTest, preserves_binary_frame_with_inherited_parmrk) {
 
 TEST_F(UartTransporterTest, receives_first_packet_without_failed_read_to_open_device) {
     ASSERT_FALSE(transporter_->isOpen());
-    qd::serial_driver::FixedPacketTool<16> packet_tool(transporter_);
+    qd::serial_driver::FixedPacketTool<24> packet_tool(transporter_);
     ASSERT_TRUE(transporter_->isOpen());
 
-    const std::array<uint8_t, 16> frame { 0xff, 0x00, 0x00, 0x25, 0x08, 0x0f, 0xff, 0xf4,
-                                          0x05, 0xdc, 0x00, 0x09, 0xae, 0x33, 0x00, 0x0d };
+    const std::array<uint8_t, 24> frame{
+        0xff, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x3e, 0x80,
+        0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x41, 0x80,
+        0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x00, 0x0d
+    };
     ASSERT_EQ(::write(master_fd_, frame.data(), frame.size()), static_cast<ssize_t>(frame.size()));
     struct pollfd readable {
         slave_fd_, POLLIN, 0
@@ -88,7 +94,7 @@ TEST_F(UartTransporterTest, receives_first_packet_without_failed_read_to_open_de
     ASSERT_EQ(::poll(&readable, 1, 1000), 1);
     ASSERT_NE(readable.revents & POLLIN, 0);
 
-    qd::serial_driver::FixedPacket<16> received;
+    qd::serial_driver::FixedPacket<24> received;
     ASSERT_TRUE(packet_tool.recvPacket(received));
     EXPECT_TRUE(std::equal(frame.begin(), frame.end(), received.buffer()));
 }

@@ -35,14 +35,14 @@ TEST(ArmorDetectorNodeTest, NodeStartupTest) {
     int binary_thres = 160;
     TraditionalDetector::LightParams l_params = { .min_ratio = 0.08,
                                                   .max_ratio = 0.4,
-                                                  .max_angle = 40.0,
+                                                  .max_angle = 0.6981317007977318,
                                                   .color_diff_thresh = 25 };
     TraditionalDetector::ArmorParams a_params = { .min_light_ratio = 0.6,
                                                   .min_small_center_distance = 0.8,
                                                   .max_small_center_distance = 3.2,
                                                   .min_large_center_distance = 3.2,
                                                   .max_large_center_distance = 5.0,
-                                                  .max_angle = 35.0 };
+                                                  .max_angle = 0.6108652381980153 };
 
     auto detector =
         std::make_unique<TraditionalDetector>(binary_thres, EnemyColor::RED, l_params, a_params);

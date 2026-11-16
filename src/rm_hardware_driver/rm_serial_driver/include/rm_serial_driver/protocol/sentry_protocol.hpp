@@ -43,7 +43,7 @@ public:
 
 private:
   enum GameStatus { NOT_START = 0x00, ENEMY_RED = 0x01, ENEMY_BLUE = 0x02 };
-  FixedPacketTool<16>::SharedPtr packet_tool_;
+  FixedPacketTool<24>::SharedPtr packet_tool_;
   // FixedPacket<16> packet_;
   rm_interfaces::msg::ChassisCmd chassis_cmd_;
 };

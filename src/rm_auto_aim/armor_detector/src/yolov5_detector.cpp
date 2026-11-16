@@ -203,7 +203,6 @@ Light Yolov5Detector::createLightBar(
 
     // Calculate tilt angle
     light.tilt_angle = std::atan2(std::abs(top.x - bottom.x), std::abs(top.y - bottom.y));
-    light.tilt_angle = light.tilt_angle / CV_PI * 180;
 
     return light;
 }

@@ -61,23 +61,22 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
 
     // 反陀螺参数
     activate_threshold[0] = 0.0;
-    activate_threshold[1] = node->declare_parameter("solver.top1.activate_threshold", 90.0);
-    activate_threshold[2] = node->declare_parameter("solver.top2.activate_threshold", 500.0);
-    for (auto& angle: activate_threshold)
-        angle = angle * M_PI / 180.; // 转弧度制
+    activate_threshold[1] =
+        node->declare_parameter("solver.top1.activate_threshold", 1.5707963267948966);
+    activate_threshold[2] =
+        node->declare_parameter("solver.top2.activate_threshold", 8.726646259971648);
     deactivate_threshold[0] = 0.0;
-    deactivate_threshold[1] = node->declare_parameter("solver.top1.deactivate_threshold", 60.0);
-    deactivate_threshold[2] = node->declare_parameter("solver.top2.deactivate_threshold", 450.0);
-    for (auto& angle: deactivate_threshold)
-        angle = angle * M_PI / 180.; // 转弧度制
+    deactivate_threshold[1] =
+        node->declare_parameter("solver.top1.deactivate_threshold", 1.0471975511965976);
+    deactivate_threshold[2] =
+        node->declare_parameter("solver.top2.deactivate_threshold", 7.853981633974483);
     max_out_error[0] = node->declare_parameter("solver.top0.max_out_error", 1.8);
     max_out_error[1] = node->declare_parameter("solver.top1.max_out_error", 0.6);
     max_out_error[2] = node->declare_parameter("solver.top2.max_out_error", 1.8);
-    max_orientation_angle[0] = node->declare_parameter("solver.top0.max_orientation_angle", 58.88);
+    max_orientation_angle[0] =
+        node->declare_parameter("solver.top0.max_orientation_angle", 1.0276498635742612);
     max_orientation_angle[1] = node->declare_parameter("solver.top1.max_orientation_angle", 0.0);
     max_orientation_angle[2] = node->declare_parameter("solver.top2.max_orientation_angle", 0.0);
-    for (auto& angle: max_orientation_angle)
-        angle = angle * M_PI / 180.; // 转弧度制
 
     node.reset();
 
@@ -138,9 +137,9 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     target.top_level = get_top_level();
 
     if (target.id == "outpost") {
-        pitch_inclined_ = -15.0 * M_PI / 180.0; // 前哨战固定15度
+        pitch_inclined_ = -M_PI / 12.0; // 前哨站固定倾角，rad
     } else {
-        pitch_inclined_ = 15.0 * M_PI / 180.0;
+        pitch_inclined_ = M_PI / 12.0;
     }
 
     // 根据top_level选择决策
@@ -162,20 +161,20 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     auto send_ypd = target_aim.aim_ypd;
     auto send_ypd_v = target_aim.aim_ypd_v;
     gimbal_cmd.yaw =
-        reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * additional_prediction_time)) * 180 / M_PI;
+        reduced_angle(send_ypd.yaw + (send_ypd_v.yaw * additional_prediction_time));
     gimbal_cmd.pitch =
-        -(send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time)) * 180 / M_PI;
-    gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
-    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
+        -(send_ypd.pitch + (send_ypd_v.pitch * additional_prediction_time));
+    gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]);
+    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]);
     gimbal_cmd.distance = send_ypd.distance;
     gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
                              && target_aim.shoot == ShootMode::SHOOT_NOW;
     // 以下信息主要用于调试和可视化
     gimbal_cmd.bullet_speed = get_bullet_speed();
-    gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
-    gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
+    gimbal_cmd.exp_yaw = send_ypd.yaw;
+    gimbal_cmd.exp_pitch = -send_ypd.pitch;
+    gimbal_cmd.yaw_vel = send_ypd_v.yaw;
+    gimbal_cmd.pitch_vel = -send_ypd_v.pitch;
     gimbal_cmd.target_v_yaw = target_aim.state(7);
 
     return gimbal_cmd;
@@ -489,7 +488,7 @@ std::vector<State> Solver::state_vec_to_direct_state_vec(
         double current_max_orientation_angle = max_orientation_angle;
         // 若当前装甲板与上一帧锁定装甲板足够接近，则放宽直接击打角度阈值，减少切板抖动
         if (std::abs(reduced_angle(state(6) - last_aim_yaw_)) < M_PI / 4.0) {
-            current_max_orientation_angle += 15.0 * M_PI / 180.0;
+            current_max_orientation_angle += M_PI / 12.0;
         }
         // 如果装甲板相对于相机的角度在允许范围内
         if (std::abs(reduced_angle(state(6) - gimbal_rpy[2])) <= current_max_orientation_angle) {
@@ -527,8 +526,8 @@ YpdCoord Solver::aim_xyz_to_aim_ypd(const Eigen::Vector3d& xyz) {
     YpdCoord aim_ypd = xyz_to_ypd(xyz);
 
     auto angle_offset = manual_compensator_->angleHardCorrect(xyz.head(2).norm(), xyz.z());
-    double pitch_offset = angle_offset[0] * M_PI / 180;
-    double yaw_offset = angle_offset[1] * M_PI / 180;
+    double pitch_offset = angle_offset[0];
+    double yaw_offset = angle_offset[1];
 
     // NEED DEBUG
     return { reduced_angle(aim_ypd.yaw + yaw_offset),

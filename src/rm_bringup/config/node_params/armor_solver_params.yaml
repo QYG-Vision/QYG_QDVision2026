@@ -47,24 +47,24 @@
 
       # max_out_error 是开火误差，1最大，是整块小装甲板大小
       # max_orientation_angle 是击打装甲板最大角度
-      # 以下的 angle 为角度制
+      # 以下角度为 rad，角速度阈值为 rad/s
       top0:
         max_out_error: 0.7
-        max_orientation_angle: 58.88
+        max_orientation_angle: 1.0276498635742612
       top1:
-        activate_threshold: 90.0  # 角速度达到该值时提升到1级
-        deactivate_threshold: 60.0 # 角速度低于该值时降到0级
+        activate_threshold: 1.5707963267948966  # 角速度达到该值时提升到1级
+        deactivate_threshold: 1.0471975511965976 # 角速度低于该值时降到0级
         max_out_error: 0.7
-        max_orientation_angle: 30.0
+        max_orientation_angle: 0.5235987755982988
       top2:
-        activate_threshold: 500.0 # 角速度达到该值时提升到2级
-        deactivate_threshold: 450.0 # 角速度低于该值时降到1级
+        activate_threshold: 8.726646259971648 # 角速度达到该值时提升到2级
+        deactivate_threshold: 7.853981633974483 # 角速度低于该值时降到1级
         max_out_error: 1.8
         max_orientation_angle: 0.0
-      # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿值，yaw轴补偿值"]
+      # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿rad，yaw轴补偿rad"]
       # 目标相对于odom
       angle_offset: [
-        "0.0 6.0 -1.0 1.0 2.3 1.2",
+        "0.0 6.0 -1.0 1.0 0.04014257279586958 0.020943951023931952",
                          
 
       ]

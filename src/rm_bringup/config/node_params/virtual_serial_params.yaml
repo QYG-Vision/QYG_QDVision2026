@@ -1,6 +1,7 @@
 /**:
   ros__parameters:
+    # 姿态角统一使用 rad
     roll: 0.0
-    pitch: 1.34
-    yaw: 0.67
+    pitch: 0.023387411976724018
+    yaw: 0.011693705988362009
     vision_mode: 1

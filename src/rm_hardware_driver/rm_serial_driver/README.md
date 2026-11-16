@@ -4,13 +4,15 @@ FYT视觉24赛季串口通信模块
 
 ## QD26 步兵协议
 
-视觉到电控使用 16 字节定长帧，921600 bit/s，大端编码，帧头 `0xFF`，帧尾 `0x0D`。
-pitch 与电控角度同号，向下为正。偏移 11 为 `target_state`：目标距离大于 0 时发送 1，
-无目标时发送 0；电控仅在该字段为 1 且距离有效时更新瞄准角。偏移 12-13 保留，
-偏移 14 校验字节当前发送 0。
+收发均为 **24 字节定长单帧**，921600 bit/s，8N1，无流控；帧头 `0xFF`、帧尾 `0x0D`。
+每帧包含一次完整指令或反馈，没有分片类型、组序号与多帧组装。
 
-定点角度按 degree * 100 编码，距离按 m * 100 编码，自转角速度按 rad/s * 100 编码，
-超出 `int16` 范围的值会限幅。
+角度为 float32 rad，目标自转速度为 float32 rad/s，距离为 float32 m，弹速为 float32 m/s；
+均按 IEEE 754 大端直接编码，不做定点缩放。pitch 向下为正，yaw 向左为正。
+时间戳保留 uint32 ms，标志位与模式保留 uint8。偏移 22（第 23 字节）的预留校验字节填 0，当前无 CRC。
+
+完整字节表、异常组处理与迁移说明见
+[infantry-jeson 串口协议](../../../infantry-jeson串口协议_电控对接.md)。电控固件需同步升级。
 
 ## qd::SerialDriverNode
 
@@ -23,8 +25,8 @@ pitch 与电控角度同号，向下为正。偏移 11 为 `target_state`：目�
   
 ### Subscribed Topics
 
-* `cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 云台控制信息
-* `cmd_chassis` (`rm_interfaces/msg/ChassisCmd`) - 底盘控制信息
+* `armor_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 自瞄云台控制信息
+* `rune_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 能量机关云台控制信息（infantry/sentry）
 
 ### 参数
 
@@ -45,6 +47,6 @@ pitch 与电控角度同号，向下为正。偏移 11 为 `target_state`：目�
   
 ### 参数
 
-* `pitch` (double, default: 0.0) - 固定的pitch角度 
-* `yaw` (double, default: 0.0) - 固定的yaw角度 
+* `pitch` (double, default: 0.0) - 固定的 pitch，rad
+* `yaw` (double, default: 0.0) - 固定的 yaw，rad
 * `vision_mode` (int, default: 0) - 视觉模式 

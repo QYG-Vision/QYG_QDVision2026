@@ -163,10 +163,10 @@ void SerialDriverNode::listenLoop() {
             t.header.stamp = real_gimbal_time;
             t.header.frame_id = target_frame_;
             t.child_frame_id = child_frame_id_;
-            auto roll = receive_data.roll * M_PI / 180.0;
+            auto roll = receive_data.roll;
             // 电控 pitch 向下为正，与 TF 的 Y 轴旋转方向一致。
-            auto pitch = receive_data.pitch * M_PI / 180.0;
-            auto yaw = receive_data.yaw * M_PI / 180.0;
+            auto pitch = receive_data.pitch;
+            auto yaw = receive_data.yaw;
             tf2::Quaternion q;
             q.setRPY(roll, pitch, yaw);
             t.transform.rotation = tf2::toMsg(q);

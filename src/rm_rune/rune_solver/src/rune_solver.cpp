@@ -269,27 +269,26 @@ rm_interfaces::msg::GimbalCmd RuneSolver::solveGimbalCmd(const Eigen::Vector3d &
 
   // Compensate angle by angle_offset_map
   auto angle_offset = manual_compensator->angleHardCorrect(target.head(2).norm(), target.z());
-  double pitch_offset = angle_offset[0] * M_PI / 180;
-  double yaw_offset = angle_offset[1] * M_PI / 180;
+  double pitch_offset = angle_offset[0];
+  double yaw_offset = angle_offset[1];
   double cmd_pitch = pitch + pitch_offset;
   double cmd_yaw = angles::normalize_angle(yaw + yaw_offset);
 
   rm_interfaces::msg::GimbalCmd gimbal_cmd;
-  gimbal_cmd.yaw = cmd_yaw * 180 / M_PI;
-  gimbal_cmd.pitch = -cmd_pitch * 180 / M_PI;
-  gimbal_cmd.yaw_diff = (cmd_yaw - current_yaw) * 180 / M_PI;
-  gimbal_cmd.pitch_diff = -(cmd_pitch - current_pitch) * 180 / M_PI;
+  gimbal_cmd.yaw = cmd_yaw;
+  gimbal_cmd.pitch = -cmd_pitch;
+  gimbal_cmd.yaw_diff = (cmd_yaw - current_yaw);
+  gimbal_cmd.pitch_diff = -(cmd_pitch - current_pitch);
   gimbal_cmd.distance = distance;
   gimbal_cmd.bullet_speed = rune_solver_params.bullet_speed;
 
   // Judge whether to shoot
   constexpr double TARGET_RADIUS = 0.308;
-  double shooting_range_yaw = std::abs(atan2(TARGET_RADIUS / 2, distance)) * 180 / M_PI;
-  double shooting_range_pitch = std::abs(atan2(TARGET_RADIUS / 2, distance)) * 180 / M_PI;
-  // Limit the shooting area to 1 degree to avoid not shooting when distance is
-  // too large
-  shooting_range_yaw = std::max(shooting_range_yaw, 1.0);
-  shooting_range_pitch = std::max(shooting_range_pitch, 1.0);
+  double shooting_range_yaw = std::abs(atan2(TARGET_RADIUS / 2, distance));
+  double shooting_range_pitch = std::abs(atan2(TARGET_RADIUS / 2, distance));
+  // Keep at least 0.0174533 rad of shooting tolerance at large distances
+  shooting_range_yaw = std::max(shooting_range_yaw, 0.017453292519943295);
+  shooting_range_pitch = std::max(shooting_range_pitch, 0.017453292519943295);
   if (rune_solver_params.bullet_speed > 0.0 &&
       std::abs(gimbal_cmd.yaw_diff) < shooting_range_yaw &&
       std::abs(gimbal_cmd.pitch_diff) < shooting_range_pitch) {

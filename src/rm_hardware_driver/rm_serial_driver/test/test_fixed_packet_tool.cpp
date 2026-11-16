@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <algorithm>
+#include <array>
+#include <deque>
 #include <memory>
 #include <string>
 #include <vector>
@@ -20,6 +23,7 @@
 #include "gtest/gtest.h"
 #include "rm_serial_driver/fixed_packet.hpp"
 #include "rm_serial_driver/fixed_packet_tool.hpp"
+#include "rm_serial_driver/float_protocol.hpp"
 
 using namespace qd;
 TEST(FixedPacketTool, construct_with_nullptr) {
@@ -72,3 +76,77 @@ TEST(FixedPacketTool, realtime_send) {
   }
   t.join();
 }
+
+namespace {
+
+class ChunkTransporter: public serial_driver::TransporterInterface {
+public:
+    std::deque<std::vector<uint8_t>> chunks;
+    bool open() override { return true; }
+    void close() override {}
+    bool isOpen() override { return true; }
+    std::string errorMessage() override { return {}; }
+    int write(const void*, size_t size) override { return static_cast<int>(size); }
+
+    int read(void* buffer, size_t size) override {
+        if (chunks.empty()) {
+            return 0;
+        }
+        auto& chunk = chunks.front();
+        const auto count = std::min(size, chunk.size());
+        std::copy_n(chunk.begin(), count, static_cast<uint8_t*>(buffer));
+        chunk.erase(chunk.begin(), chunk.begin() + count);
+        if (chunk.empty()) {
+            chunks.pop_front();
+        }
+        return static_cast<int>(count);
+    }
+};
+
+TEST(FixedPacketTool, preservesPartialFramesAndResynchronizesAfterNoise) {
+    auto transporter = std::make_shared<ChunkTransporter>();
+    serial_driver::FixedPacketTool<24> tool(transporter);
+    auto expected = serial_driver::wire::make_frame();
+    // 载荷内的帧头尾字节不能截断物理帧。
+    expected[5] = 0xff;
+    expected[6] = 0x0d;
+    transporter->chunks.push_back({0x77, 0x88, 0x99});
+    transporter->chunks.emplace_back(expected.begin(), expected.begin() + 5);
+    transporter->chunks.emplace_back(expected.begin() + 5, expected.begin() + 11);
+    transporter->chunks.emplace_back(expected.begin() + 11, expected.end());
+    serial_driver::FixedPacket<24> actual;
+    EXPECT_FALSE(tool.recvPacket(actual));
+    EXPECT_FALSE(tool.recvPacket(actual));
+    EXPECT_FALSE(tool.recvPacket(actual));
+    ASSERT_TRUE(tool.recvPacket(actual));
+    EXPECT_TRUE(std::equal(expected.begin(), expected.end(), actual.buffer()));
+    EXPECT_FALSE(tool.recvPacket(actual));
+}
+
+TEST(FixedPacketTool, receivesBackToBack24ByteFramesAcrossArbitraryReads) {
+    auto transporter = std::make_shared<ChunkTransporter>();
+    serial_driver::FixedPacketTool<24> tool(transporter);
+    std::array<serial_driver::wire::Frame, 3> frames{};
+    for (size_t i = 0; i < frames.size(); ++i) {
+        serial_driver::wire::Feedback feedback;
+        feedback.yaw = static_cast<float>(i + 1);
+        frames[i] = serial_driver::wire::encode_feedback(feedback);
+    }
+    std::vector<uint8_t> stream{0x66, 0x77, 0x88};
+    for (const auto& frame : frames) {
+        stream.insert(stream.end(), frame.begin(), frame.end());
+    }
+    transporter->chunks.push_back(stream);
+    serial_driver::FixedPacket<24> actual;
+    size_t received = 0;
+    for (int attempt = 0; attempt < 10; ++attempt) {
+        if (tool.recvPacket(actual)) {
+            ASSERT_LT(received, frames.size());
+            const auto& expected = frames[received++];
+            EXPECT_TRUE(std::equal(expected.begin(), expected.end(), actual.buffer()));
+        }
+    }
+    EXPECT_EQ(received, frames.size());
+}
+
+} // namespace

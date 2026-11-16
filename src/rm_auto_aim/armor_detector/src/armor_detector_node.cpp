@@ -41,7 +41,7 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
     // Tricks to make pose more accurate
     // use_ba_ = this->declare_parameter("use_ba", true);
 
-    max_yaw_angle_ = this->declare_parameter("max_yaw_angle", 60.0);
+    max_yaw_angle_ = this->declare_parameter("max_yaw_angle", 1.0471975511965976);
 
     // Armors Publisher
     armors_pub_ = this->create_publisher<rm_interfaces::msg::Armors>(
@@ -419,7 +419,7 @@ std::unique_ptr<TraditionalDetector> ArmorDetectorNode::initTraditionalDetector(
     TraditionalDetector::LightParams l_params = {
         .min_ratio = declare_parameter("light.min_ratio", 0.08),
         .max_ratio = declare_parameter("light.max_ratio", 0.4),
-        .max_angle = declare_parameter("light.max_angle", 40.0),
+        .max_angle = declare_parameter("light.max_angle", 0.6981317007977318),
         .color_diff_thresh = static_cast<int>(declare_parameter("light.color_diff_thresh", 25))
     };
 
@@ -429,7 +429,7 @@ std::unique_ptr<TraditionalDetector> ArmorDetectorNode::initTraditionalDetector(
         .max_small_center_distance = declare_parameter("armor.max_small_center_distance", 3.2),
         .min_large_center_distance = declare_parameter("armor.min_large_center_distance", 3.2),
         .max_large_center_distance = declare_parameter("armor.max_large_center_distance", 5.0),
-        .max_angle = declare_parameter("armor.max_angle", 35.0)
+        .max_angle = declare_parameter("armor.max_angle", 0.6108652381980153)
     };
 
     auto detector =
