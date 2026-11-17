@@ -4,7 +4,11 @@
 
 当前 `infantry-jetson-Lonesome-George` 工作区采用收发均为 24 字节单帧的 float32 弧度协议，电控固件须同步升级。字节布局和迁移说明见 [电控对接文档](infantry-jeson串口协议_电控对接.md)。
 
-Jetson 适配文档：[具体改动与验证范围](docs/jetson_changes.md)、[测试与 Orin Nano 部署手册](docs/jetson.md)。
+Jetson 适配文档：[具体改动与验证范围](jetson_changes.md)、[测试与 Orin Nano 部署手册](jetson.md)。
+
+2026-11-19 本机进度：Orin Nano ARM64 Docker 构建与 14 个包编译完成，CPU 测试和
+视频、虚拟电控到云台指令输出的六项检查通过；真实相机、电控闭环与 TensorRT GPU
+仍待验证。Jetson 操作优先使用上述部署手册，本文其余安装说明保留通用开发环境背景。
 
 ## 一、项目结构
 
@@ -115,7 +119,7 @@ pixi shell
 
 ## 三、编译与运行
 
-修改[rm_bringup/config/launch_params.yaml](src/rm_bringup/config/launch_params.yaml)，选择需要启动的功能
+修改[rm_bringup/config/launch_params.yaml](../src/rm_bringup/config/launch_params.yaml)，选择需要启动的功能
 
 ```bash
 # 使用 pixi 的话用这行编译

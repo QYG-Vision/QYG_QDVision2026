@@ -3,8 +3,9 @@ rune: false
 record: false
 auto_record: false
 use_state_machine_camera: false
-video_player: false
-virtual_serial: false
+video_player: true
+virtual_serial: true
 replay: false
 enable_dynamic_camera_tf: false
 enable_pitch_calibration: false
+foxglove_bridge: false

@@ -6,7 +6,7 @@
     binary_thres: 80
     # 所有角度阈值使用 rad
     max_yaw_angle: 1.0471975511965976
-    device: "GPU"
+    device: "CPU"
 
     detector: yolo # tradition ：使用opencv识别  yolo : 使用神经网络识别
     use_pca: false # 使用PCA算法矫正灯条的角点

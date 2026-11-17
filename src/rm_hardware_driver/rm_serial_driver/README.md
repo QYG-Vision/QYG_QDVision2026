@@ -12,7 +12,7 @@ FYT视觉24赛季串口通信模块
 时间戳保留 uint32 ms，标志位与模式保留 uint8。偏移 22（第 23 字节）的预留校验字节填 0，当前无 CRC。
 
 完整字节表、异常组处理与迁移说明见
-[infantry-jeson 串口协议](../../../infantry-jeson串口协议_电控对接.md)。电控固件需同步升级。
+[infantry-jeson 串口协议](../../../docs/infantry-jeson串口协议_电控对接.md)。电控固件需同步升级。
 
 ## qd::SerialDriverNode
 

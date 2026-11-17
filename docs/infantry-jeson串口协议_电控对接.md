@@ -114,10 +114,10 @@ colcon test-result --verbose
 
 ## 代码依据
 
-- [float_protocol.hpp](src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/float_protocol.hpp)：24 字节布局、大端 float32 编解码及反馈校验。
-- [protocol.hpp](src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/protocol.hpp)：目标编号与 ROS 数据接口。
-- [infantry_protocol.cpp](src/rm_hardware_driver/rm_serial_driver/src/protocol/infantry_protocol.cpp)：步兵实际收发与话题订阅。
-- [fixed_packet_tool.hpp](src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/fixed_packet_tool.hpp)：定长帧提取与短读缓存。
-- [serial_driver_node.cpp](src/rm_hardware_driver/rm_serial_driver/src/serial_driver_node.cpp)：采样时间映射和姿态 TF。
-- [serial_driver_params.yaml](src/rm_bringup/config/node_params/serial_driver_params.yaml)：串口参数。
-- [test_protocol_encoding.cpp](src/rm_hardware_driver/rm_serial_driver/test/test_protocol_encoding.cpp)：完整帧字节与校验回归测试。
+- [float_protocol.hpp](../src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/float_protocol.hpp)：24 字节布局、大端 float32 编解码及反馈校验。
+- [protocol.hpp](../src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/protocol.hpp)：目标编号与 ROS 数据接口。
+- [infantry_protocol.cpp](../src/rm_hardware_driver/rm_serial_driver/src/protocol/infantry_protocol.cpp)：步兵实际收发与话题订阅。
+- [fixed_packet_tool.hpp](../src/rm_hardware_driver/rm_serial_driver/include/rm_serial_driver/fixed_packet_tool.hpp)：定长帧提取与短读缓存。
+- [serial_driver_node.cpp](../src/rm_hardware_driver/rm_serial_driver/src/serial_driver_node.cpp)：采样时间映射和姿态 TF。
+- [serial_driver_params.yaml](../src/rm_bringup/config/node_params/serial_driver_params.yaml)：串口参数。
+- [test_protocol_encoding.cpp](../src/rm_hardware_driver/rm_serial_driver/test/test_protocol_encoding.cpp)：完整帧字节与校验回归测试。

@@ -2,10 +2,20 @@
 services:
   rv_devel:
     build:
+      # 构建阶段共用宿主机网络，才能访问本机 127.0.0.1 上的代理。
+      network: host
       args:
         # CPU 验证使用原生 ARM64 Ubuntu；GPU 构建时显式指定已验证的 JetPack 开发镜像。
         BASE_IMAGE: ${JETSON_BASE_IMAGE:-ubuntu:22.04}
+        JETSON_MINIMAL: "ON"
+        ROS_BASE_PACKAGE: ros-humble-ros-base
         THREADS: "2"
+        # daemon 代理只负责拉镜像；RUN 中的 Git/curl/wget 需要单独传入代理。
+        HTTP_PROXY: ${HTTP_PROXY:-${http_proxy:-}}
+        HTTPS_PROXY: ${HTTPS_PROXY:-${https_proxy:-}}
+        # apt 以外的 curl/rosdep 同样直连国内镜像；兼容读取小写变量的工具。
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1},mirrors.ustc.edu.cn
+        no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1},mirrors.ustc.edu.cn
     image: qyg-vision:jetson-jp6
     platform: linux/arm64
     runtime: nvidia
