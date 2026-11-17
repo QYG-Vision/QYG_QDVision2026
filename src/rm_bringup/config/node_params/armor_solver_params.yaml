@@ -58,14 +58,15 @@
         feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
         target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
-          max_acceleration: 4.3770933589050385 # rad/s²
+          max_acceleration: 50 # rad/s²
         pitch:
-          max_acceleration: 99.99999999462034 # rad/s²
+          max_acceleration: 100 # rad/s²
 
-      # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿rad，yaw轴补偿rad"]
+      # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿°, yaw轴补偿°"]
+      # 原弧度值换成配置角度：degree = rad × 180 / π；读取时转回 rad = degree × π / 180
       # 目标相对于odom
       angle_offset: [
-        "0.0 6.0 -1.0 1.0 0.04014257279586958 0.020943951023931952",
+        "0.0 6.0 -1.0 1.0 2.3 1.2",
                          
 
       ]

@@ -75,11 +75,24 @@ namespace qd {
        */
       std::vector<double> angleHardCorrect(const double dist, const double height);
 
+      /**
+       * @brief 向内部补偿表添加一个区域。
+       * @param d_region 目标水平距离范围，m。
+       * @param h_region 目标相对高度范围，m。
+       * @param pitch_offset 俯仰补偿，rad。
+       * @param yaw_offset 偏航补偿，rad。
+       * @return 区域成功添加时为 true，和已有区域冲突时为 false。
+       */
       bool updateMap(const LineRegion& d_region,
                      const LineRegion& h_region,
                      const double pitch_offset,
                      const double yaw_offset);
 
+      /**
+       * @brief 读取角度制配置并转换为内部弧度补偿表。
+       * @param str 六个空格分隔的数值：距离上下限、高度上下限（m）、pitch/yaw 补偿（°）。
+       * @return 配置解析成功且补偿区域添加成功时为 true。
+       */
       bool updateMapByStr(const std::string& str);
 
       bool updateMapFlow(const std::vector<std::string> strs) {
