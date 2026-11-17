@@ -5,6 +5,9 @@
 # 编译产物
 build/
 install/
+*.engine
+*.plan
+__pycache__/
 log/
 MvSdkLog/
 MvSDKLog/

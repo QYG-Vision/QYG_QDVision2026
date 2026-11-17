@@ -68,50 +68,13 @@ set(dependencies
 ament_target_dependencies(${PROJECT_NAME} ${dependencies})
 target_include_directories(${PROJECT_NAME} PUBLIC ${OpenCV_INCLUDE_DIRS} ${CERES_INCLUDE_DIRS})
 
-# 相机SDK路径（可选，如果hik-camera包存在则使用其SDK）
-find_path(HIK_SDK_INCLUDE_DIR MvCameraControl.h
-  PATHS
-    ${CMAKE_CURRENT_SOURCE_DIR}/hikSDK/include
-    /usr/local/include
-    /usr/include
-  NO_DEFAULT_PATH
+include(cmake/hik_sdk.cmake)
+target_include_directories(${PROJECT_NAME} BEFORE PUBLIC
+  $<BUILD_INTERFACE:${HIK_SDK_INCLUDE_DIR}>
+  $<INSTALL_INTERFACE:include>
 )
-
-if(HIK_SDK_INCLUDE_DIR)
-  message(STATUS "Found Hik SDK at: ${HIK_SDK_INCLUDE_DIR}")
-  target_include_directories(${PROJECT_NAME} PUBLIC
-    $<BUILD_INTERFACE:${HIK_SDK_INCLUDE_DIR}>
-    $<INSTALL_INTERFACE:include>
-  )
-
-  # 根据架构设置库路径
-  if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-    find_library(MVCAMERACONTROL_LIB MvCameraControl
-      PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/hikSDK/lib/amd64
-        /usr/local/lib
-        /usr/lib
-      NO_DEFAULT_PATH
-    )
-  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-    find_library(MVCAMERACONTROL_LIB MvCameraControl
-      PATHS
-        ${CMAKE_CURRENT_SOURCE_DIR}/hikSDK/lib/arm64
-        /usr/local/lib
-        /usr/lib
-      NO_DEFAULT_PATH
-    )
-  endif()
-
-  if(MVCAMERACONTROL_LIB)
-    target_link_libraries(${PROJECT_NAME} ${MVCAMERACONTROL_LIB})
-    message(STATUS "Linked MvCameraControl library")
-  else()
-    message(WARNING "MvCameraControl library not found, vision_state_machine will not support camera")
-  endif()
-else()
-  message(WARNING "Hik SDK not found, vision_state_machine will not support camera")
-endif()
+target_link_libraries(${PROJECT_NAME} ${HIK_SDK_LIBRARY})
+install(DIRECTORY ${HIK_SDK_LIBRARY_DIR}/ DESTINATION lib)
 
 target_link_libraries(${PROJECT_NAME}
   qdlogger
@@ -124,7 +87,7 @@ install(DIRECTORY include/
 )
 
 # Install hikSDK include directories for dependent packages
-install(DIRECTORY hikSDK/include/
+install(DIRECTORY ${HIK_SDK_INCLUDE_DIR}/
   DESTINATION include
 )
 

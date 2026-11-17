@@ -18,6 +18,16 @@ def generate_launch_description():
     launch_params = yaml.safe_load(open(os.path.join(
         get_package_share_directory('rm_bringup'), 'config', 'launch_params.yaml')))
 
+    # 按部署环境追加参数，避免覆盖普通开发机器的配置。
+    profile = os.environ.get('RM_VISION_PROFILE', '')
+    if profile not in ('', 'jetson'):
+        raise ValueError('RM_VISION_PROFILE must be empty or jetson')
+    profile_dir = os.path.join(
+        get_package_share_directory('rm_bringup'), 'config', profile)
+    if profile:
+        with open(os.path.join(profile_dir, 'launch_params.yaml'), encoding='utf-8') as stream:
+            launch_params.update(yaml.safe_load(stream))
+
     # replay 模式自身会回放图像和串口，优先级最高，避免和其它输入源冲突
     if launch_params.get('replay', False):
         launch_params['use_state_machine_camera'] = False
@@ -33,7 +43,17 @@ def generate_launch_description():
 
     # 定义获取参数文件的辅助函数
     def get_params(name):
-        return os.path.join(get_package_share_directory('rm_bringup'), 'config', 'node_params', '{}_params.yaml'.format(name))
+        path = os.path.join(get_package_share_directory('rm_bringup'), 'config', 'node_params', '{}_params.yaml'.format(name))
+        if name == 'camera_driver':
+            # 相机文件是普通嵌套 YAML，转为字典后由 launch 展平参数名。
+            with open(path, encoding='utf-8') as stream:
+                return yaml.safe_load(stream)
+        return path
+
+    def get_profile_params(name):
+        """返回可选的部署参数覆盖文件，后面的文件具有更高优先级。"""
+        path = os.path.join(profile_dir, '{}_params.yaml'.format(name))
+        return [path] if profile and os.path.isfile(path) else []
 
     # --- 准备 ComposableNode 列表 ---
     composable_nodes = []
@@ -81,7 +101,7 @@ def generate_launch_description():
                 plugin='hik_camera::HikCameraNode',
                 name='camera_driver',
                 namespace=node_namespace,
-                parameters=[get_params('camera_driver')],
+                parameters=[get_params('camera_driver'), *get_profile_params('camera_driver')],
                 extra_arguments=[{'use_intra_process_comms': True}]
             ))
     # 3. 串口驱动 (Serial Driver)
@@ -117,6 +137,8 @@ def generate_launch_description():
         namespace=node_namespace,
         parameters=[get_params('armor_detector'), 
                     get_params('camera_driver'), 
+                    *get_profile_params('armor_detector'),
+                    *get_profile_params('camera_driver'),
                     {"use_state_machine_camera": launch_params['use_state_machine_camera'],
                     "enable_record": launch_params['record']
                     }

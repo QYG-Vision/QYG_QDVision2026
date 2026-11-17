@@ -1,9 +1,6 @@
-# 根据架构选择基础镜像
-ARG TARGETARCH
-
-FROM ubuntu:22.04 AS amd64
-FROM arm64v8/ubuntu:22.04 AS arm64
-FROM ${TARGETARCH} AS final
+# 普通开发使用原生架构 Ubuntu；Jetson 可传入配套的 L4T JetPack 开发镜像。
+ARG BASE_IMAGE=ubuntu:22.04
+FROM ${BASE_IMAGE} AS final
 
 # 重新声明 ARG 
 ARG TARGETARCH
@@ -18,8 +15,9 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV TZ=Asia/Shanghai
 
 # 设置线程数
-ARG THREADS=16
+ARG THREADS=2
 ENV THREADS=${THREADS}
+ENV CMAKE_BUILD_PARALLEL_LEVEL=${THREADS}
 
 # 更换软件源为中科大源
 RUN \
@@ -50,7 +48,7 @@ RUN \
     # 编译工具
     git cmake build-essential clangd g++ \
     # 依赖
-    libeigen3-dev libceres-dev libopencv-dev libfmt-dev \
+    libeigen3-dev libceres-dev libopencv-dev libfmt-dev libtbb-dev libusb-1.0-0 \
     # openvino
     wget gnupg software-properties-common \
     bash-completion  && \
@@ -74,19 +72,21 @@ RUN \
     apt clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* 
 
 # openvino
-# armd64架构下从源码编译安装，x86架构下使用Intel官方apt源安装
-RUN \
+# ARM64 安装 CPU 后端供已有 IR 模型和打符包使用；GPU 推理由 TensorRT 提供。
+RUN set -eu; \
     if [ "$TARGETARCH" = "arm64" ]; then \
         echo "Building OpenVINO from source for arm64..." && \
-        git clone -b 2025.3.0 https://gitee.com/openvinotoolkit-prc/openvino.git /tmp/openvino && \
+        git clone --depth 1 --branch 2025.3.0 --recurse-submodules --shallow-submodules \
+            https://github.com/openvinotoolkit/openvino.git /tmp/openvino && \
         cd /tmp/openvino && \
-        chmod +x scripts/submodule_update_with_gitee.sh && \
-        ./scripts/submodule_update_with_gitee.sh && \
         ./install_build_dependencies.sh && \
-        mkdir build && cd build && \
-        cmake -DCMAKE_BUILD_TYPE=Release .. && \
-        make -j16 && \
-        make install && \
+        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX=/opt/openvino \
+            -DENABLE_INTEL_GPU=OFF -DENABLE_INTEL_NPU=OFF \
+            -DENABLE_TESTS=OFF -DENABLE_SAMPLES=OFF -DENABLE_PYTHON=OFF && \
+        cmake --build build --parallel "$THREADS" && \
+        cmake --install build && \
+        cd / && \
         rm -rf /tmp/openvino ; \
     else \
         echo "Installing OpenVINO from Intel APT repository for amd64..." && \
@@ -95,7 +95,9 @@ RUN \
         echo "deb https://apt.repos.intel.com/openvino ubuntu22 main" > /etc/apt/sources.list.d/intel-openvino.list && \
         apt update && apt install -y openvino-2025.3.0 && \
         apt clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* ; \
-    fi 
+    fi
+
+ENV OpenVINO_DIR=/opt/openvino/runtime/cmake
 
 # rmvision
 RUN \
@@ -127,8 +129,9 @@ RUN \
     && apt clean && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # 添加环境变量 到 bashrc
-RUN echo "if [ -f /ros_ws/install/setup.bash ]; then source /ros_ws/install/setup.bash; fi" >> /root/.bashrc \
-    && echo "if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi" >> /root/.bashrc \
+RUN echo "if [ -f /opt/ros/humble/setup.bash ]; then source /opt/ros/humble/setup.bash; fi" >> /root/.bashrc \
+    && echo "if [ -f /opt/openvino/setupvars.sh ]; then source /opt/openvino/setupvars.sh; fi" >> /root/.bashrc \
+    && echo "if [ -f /ros_ws/install/setup.bash ]; then source /ros_ws/install/setup.bash; fi" >> /root/.bashrc \
     && echo "if [ -f /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash ]; then source /usr/share/colcon_argcomplete/hook/colcon-argcomplete.bash; fi" >> /root/.bashrc \
     && echo "if [ -f /usr/share/bash-completion/bash_completion ]; then source /usr/share/bash-completion/bash_completion; fi" >> /root/.bashrc  \
     && echo 'export ROSDISTRO_INDEX_URL=https://mirrors.ustc.edu.cn/rosdistro/index-v4.yaml' >> /root/.bashrc
@@ -166,8 +169,8 @@ if [ -f "/ros_ws/install/setup.bash" ]; then
     source "/ros_ws/install/setup.bash"
 fi
 
-if [ -f "/usr/local/setupvars.sh" ]; then
-    source "/usr/local/setupvars.sh"
+if [ -f "/opt/openvino/setupvars.sh" ]; then
+    source "/opt/openvino/setupvars.sh"
 fi
 
 exec "\$@"

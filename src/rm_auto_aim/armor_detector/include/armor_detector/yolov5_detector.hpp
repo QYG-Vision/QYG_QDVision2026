@@ -13,6 +13,7 @@
 #include <vector>
 // project
 #include "armor_detector/detector.hpp"
+#include "armor_detector/tensorrt_inference.hpp"
 #include "armor_detector/types.hpp"
 #include "rm_interfaces/msg/debug_yolos.hpp"
 
@@ -30,12 +31,22 @@ public:
         std::vector<std::string> ignore_yoloclasses;
     };
 
+    /**
+     * @brief 根据选定后端加载装甲板模型，共用角点和类别解析逻辑。
+     * @param model_path_xml OpenVINO XML 路径或 TensorRT engine 路径。
+     * @param model_path_bin OpenVINO 权重路径，TensorRT 模式忽略。
+     * @param device OpenVINO 推理设备，TensorRT 模式使用当前 CUDA 设备。
+     * @param color 需要识别的敌方颜色。
+     * @param y 置信度、NMS 及装甲板分类参数。
+     * @param backend 推理后端，只允许 openvino 或 tensorrt。
+     */
     Yolov5Detector(
         const std::string& model_path_xml,
         const std::string& model_path_bin,
         const std::string& device,
         const EnemyColor& color,
-        const Yolov5Params& y
+        const Yolov5Params& y,
+        const std::string& backend = "openvino"
     );
 
     // YOLOv5 detect armor
@@ -63,6 +74,7 @@ private:
     ov::InferRequest infer_request_;
     cv::Mat input_buffer_;
     ov::Tensor input_tensor_;
+    std::unique_ptr<TensorRtInference> tensorrt_;
 
     const std::vector<std::string> ArmorNumber = {
         "sentry", "1", "2", "3", "4", "5", "outpost", "base", "base", "negative"

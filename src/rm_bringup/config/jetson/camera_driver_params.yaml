@@ -1,0 +1,6 @@
+/**:
+  ros__parameters:
+    camera_6mm.enable_frame_rate: true
+    camera_6mm.acquisition_frame_rate: 30.0
+    camera_8mm.enable_frame_rate: true
+    camera_8mm.acquisition_frame_rate: 30.0

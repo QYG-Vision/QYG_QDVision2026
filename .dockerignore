@@ -1,0 +1,12 @@
+.git
+.cache
+.pixi
+build
+install
+log
+qd2026-log
+MvSdkLog
+MvSDKLog
+record*
+watchdog
+rosbag

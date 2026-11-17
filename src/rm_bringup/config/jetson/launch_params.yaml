@@ -1,0 +1,10 @@
+# 首次部署仅验证自瞄链路，保留原有相机内参和手眼标定配置。
+rune: false
+record: false
+auto_record: false
+use_state_machine_camera: false
+video_player: false
+virtual_serial: false
+replay: false
+enable_dynamic_camera_tf: false
+enable_pitch_calibration: false

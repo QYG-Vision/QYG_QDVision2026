@@ -8,6 +8,7 @@
 #include <opencv2/imgproc.hpp>
 //std
 #include <string>
+#include <stdexcept>
 #include <vector>
 //project
 #include "armor_detector/types.hpp"
@@ -22,16 +23,38 @@ Yolov5Detector::Yolov5Detector(
     const std::string& model_path_bin,
     const std::string& device,
     const EnemyColor& color,
-    const Yolov5Params& y
+    const Yolov5Params& y,
+    const std::string& backend
 ):
     device_(device),
     yolov5_params(y) {
     this->detect_color = color;
+    input_buffer_ = cv::Mat::zeros(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC3);
+    if (backend == "tensorrt") {
+        tensorrt_ = std::make_unique<TensorRtInference>(model_path_xml);
+        return;
+    }
+    if (backend != "openvino") {
+        throw std::invalid_argument("Unknown YOLO backend: " + backend);
+    }
     input_shape = { 1,
                     static_cast<unsigned long>(IMAGE_HEIGHT),
                     static_cast<unsigned long>(IMAGE_WIDTH),
                     3 };
     model = core.read_model(model_path_xml, model_path_bin);
+    if (model->inputs().size() != 1 || model->outputs().size() != 1
+        || model->input().get_partial_shape().is_dynamic()
+        || model->output().get_partial_shape().is_dynamic())
+    {
+        throw std::invalid_argument("Armor model requires one static input and one static output");
+    }
+    const auto output_shape = model->output().get_shape();
+    if (model->input().get_shape() != ov::Shape({ 1, 3, 640, 640 })
+        || output_shape.size() != 3 || output_shape[0] != 1 || output_shape[1] == 0
+        || output_shape[1] > 1000000 || output_shape[2] != 22)
+    {
+        throw std::invalid_argument("Armor model requires [1,3,640,640] -> [1,N,22]");
+    }
     // Step . Inizialize Preprocessing for the model
     ppp_ = std::make_unique<ov::preprocess::PrePostProcessor>(model);
     // Specify input image format
@@ -59,7 +82,6 @@ Yolov5Detector::Yolov5Detector(
 
     infer_request_ = compiled_model.create_infer_request();
 
-    input_buffer_ = cv::Mat::zeros(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC3);
     input_tensor_ = ov::Tensor(compiled_model.input().get_element_type(), 
                                compiled_model.input().get_shape(), 
                                input_buffer_.data);
@@ -82,6 +104,9 @@ std::vector<Armor> Yolov5Detector::detect(const cv::Mat& input) {
 }
 
 std::vector<Armor> Yolov5Detector::getYoloOutput(const cv::Mat& img, float& scale) {
+    if (img.empty() || img.type() != CV_8UC3) {
+        throw std::invalid_argument("YOLO input must be a non-empty CV_8UC3 RGB image");
+    }
     //get img size
     int w = img.cols;
     int h = img.rows;
@@ -94,6 +119,10 @@ std::vector<Armor> Yolov5Detector::getYoloOutput(const cv::Mat& img, float& scal
     // resize input image
     cv::Rect roi(0, 0, nw, nh);
     cv::resize(img, input_buffer_(roi), cv::Size(nw, nh));
+
+    if (tensorrt_ != nullptr) {
+        return infer(tensorrt_->infer(input_buffer_), scale);
+    }
 
     // start inference
     infer_request_.set_input_tensor(input_tensor_);

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.18)
 project(armor_detector)
 
 ## Use C++17
@@ -27,6 +27,15 @@ find_package(OpenCV REQUIRED)
 find_package(TBB REQUIRED COMPONENTS tbb)
 find_package(fmt REQUIRED)
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
+option(ENABLE_TENSORRT "Build the TensorRT 10 inference backend" OFF)
+if(ENABLE_TENSORRT)
+  find_path(TENSORRT_INCLUDE_DIR NvInfer.h PATH_SUFFIXES aarch64-linux-gnu x86_64-linux-gnu)
+  find_library(TENSORRT_LIBRARY nvinfer)
+  find_package(CUDAToolkit REQUIRED)
+  if(NOT TENSORRT_INCLUDE_DIR OR NOT TENSORRT_LIBRARY)
+    message(FATAL_ERROR "TensorRT development files missing: install libnvinfer-dev in the container")
+  endif()
+endif()
 # find_package(G2O REQUIRED)
 # find_package(Sophus REQUIRED)
 
@@ -39,6 +48,12 @@ ament_auto_find_build_dependencies()
 ament_auto_add_library(${PROJECT_NAME} SHARED
   DIRECTORY src
 )
+
+if(ENABLE_TENSORRT)
+  target_compile_definitions(${PROJECT_NAME} PRIVATE QD_HAS_TENSORRT)
+  target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${TENSORRT_INCLUDE_DIR})
+  target_link_libraries(${PROJECT_NAME} ${TENSORRT_LIBRARY} CUDA::cudart)
+endif()
 
 target_include_directories(${PROJECT_NAME} PUBLIC
 ${OpenCV_INCLUDE_DIRS}
@@ -84,6 +99,8 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest)
   ament_add_gtest(test_detector test/test_detector.cpp)
   target_link_libraries(test_detector ${PROJECT_NAME})
+  ament_add_gtest(test_yolo_backends test/test_yolo_backends.cpp)
+  target_link_libraries(test_yolo_backends ${PROJECT_NAME})
 
 endif()
 

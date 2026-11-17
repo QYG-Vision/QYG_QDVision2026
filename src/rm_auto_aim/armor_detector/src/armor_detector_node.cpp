@@ -21,6 +21,7 @@
 
 #include <cv_bridge/cv_bridge.h>
 #include <sensor_msgs/image_encodings.hpp>
+#include <stdexcept>
 
 namespace qd::auto_aim {
 ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
@@ -467,17 +468,40 @@ std::unique_ptr<TraditionalDetector> ArmorDetectorNode::initTraditionalDetector(
  * @return std::unique_ptr<Yolov5Detector> 初始化好的识别器
  */
 std::unique_ptr<Yolov5Detector> ArmorDetectorNode::initYoloDetector() {
-    // model path
     namespace fs = std::filesystem;
-    fs::path xml_path =
-        utils::URLResolver::getResolvedPath("package://armor_detector/model/IR/0526.xml");
-    fs::path bin_path =
-        utils::URLResolver::getResolvedPath("package://armor_detector/model/IR/0526.bin");
-
-    FYT_ASSERT_MSG(
-        fs::exists(xml_path) && fs::exists(bin_path),
-        xml_path.string() + ", " + bin_path.string() + " Not Found!"
+    const auto backend = this->declare_parameter("yolo.backend", "openvino");
+    if (backend != "openvino" && backend != "tensorrt") {
+        throw std::invalid_argument("yolo.backend must be openvino or tensorrt");
+    }
+    // 同时支持 package://、file:// 和普通文件路径。
+    const auto resolve_model = [](const std::string& path) {
+        if (path.find("://") != std::string::npos) {
+            return utils::URLResolver::getResolvedPath(path);
+        }
+        return fs::path(path);
+    };
+    const auto model_url = this->declare_parameter(
+        "yolo.model",
+        backend == "tensorrt" ? "package://armor_detector/model/0526.engine"
+                             : "package://armor_detector/model/IR/0526.xml"
     );
+    const auto weights_url = this->declare_parameter(
+        "yolo.weights", "package://armor_detector/model/IR/0526.bin"
+    );
+    const auto xml_path = resolve_model(model_url);
+    const auto bin_path = backend == "openvino" ? resolve_model(weights_url) : fs::path();
+
+    if (!fs::is_regular_file(xml_path)
+        || (backend == "openvino" && !fs::is_regular_file(bin_path)))
+    {
+        throw std::runtime_error(
+            "YOLO model missing: " + model_url
+            + (backend == "tensorrt"
+                   ? "; generate the matching four-corner armor engine on the Jetson first"
+                   : "; check yolo.model and yolo.weights")
+        );
+    }
+    FYT_INFO("armor_detector", "YOLO backend: {}, model: {}", backend, xml_path.string());
 
     // inferece device
     std::string device = this->declare_parameter("device", "CPU");
@@ -491,7 +515,9 @@ std::unique_ptr<Yolov5Detector> ArmorDetectorNode::initYoloDetector() {
     };
 
     auto detector =
-        std::make_unique<Yolov5Detector>(xml_path, bin_path, device, EnemyColor::RED, y_params);
+        std::make_unique<Yolov5Detector>(
+            xml_path.string(), bin_path.string(), device, EnemyColor::RED, y_params, backend
+        );
 
     return detector;
 }

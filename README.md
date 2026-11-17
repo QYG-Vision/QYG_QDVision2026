@@ -2,7 +2,9 @@
 
 奇点战队2026赛季视觉项目仓库，该项目基于中南大学FYT战队24赛季开源
 
-当前 `infantry-jeson` 工作区采用收发均为 24 字节单帧的 float32 弧度协议，电控固件须同步升级。字节布局和迁移说明见 [电控对接文档](infantry-jeson串口协议_电控对接.md)。
+当前 `infantry-jetson-Lonesome-George` 工作区采用收发均为 24 字节单帧的 float32 弧度协议，电控固件须同步升级。字节布局和迁移说明见 [电控对接文档](infantry-jeson串口协议_电控对接.md)。
+
+Jetson 适配文档：[具体改动与验证范围](docs/jetson_changes.md)、[测试与 Orin Nano 部署手册](docs/jetson.md)。
 
 ## 一、项目结构
 

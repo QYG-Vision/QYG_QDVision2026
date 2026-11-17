@@ -21,29 +21,12 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
   src/video_player.cpp
 )
 
-# 使用 rm_utils 中的 hikSDK
-set(RM_UTILS_HIK_SDK_PATH ${CMAKE_CURRENT_SOURCE_DIR}/../../rm_utils/hikSDK)
-
-target_include_directories(${PROJECT_NAME} PUBLIC ${RM_UTILS_HIK_SDK_PATH}/include)
-
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
-  target_link_directories(${PROJECT_NAME} PUBLIC ${RM_UTILS_HIK_SDK_PATH}/lib/amd64)
-  install(
-    DIRECTORY ${RM_UTILS_HIK_SDK_PATH}/lib/amd64/
-    DESTINATION lib
-  )
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64")
-  target_link_directories(${PROJECT_NAME} PUBLIC ${RM_UTILS_HIK_SDK_PATH}/lib/arm64)
-  install(
-    DIRECTORY ${RM_UTILS_HIK_SDK_PATH}/lib/arm64/
-    DESTINATION lib
-  )
-else()
-  message(FATAL_ERROR "Unsupport host system architecture: ${CMAKE_HOST_SYSTEM_PROCESSOR}!")
-endif()
+include(${CMAKE_CURRENT_SOURCE_DIR}/../../rm_utils/cmake/hik_sdk.cmake)
+target_include_directories(${PROJECT_NAME} BEFORE PUBLIC ${HIK_SDK_INCLUDE_DIR})
+install(DIRECTORY ${HIK_SDK_LIBRARY_DIR}/ DESTINATION lib)
 
 target_link_libraries(${PROJECT_NAME}
-  MvCameraControl
+  ${HIK_SDK_LIBRARY}
   ${OpenCV_LIBS}
 )
 
