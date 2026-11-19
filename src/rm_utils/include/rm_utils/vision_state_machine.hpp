@@ -103,6 +103,13 @@ public:
     bool initializeCamera(CameraType camera_type);
 
     /**
+     * @brief 在所属节点销毁前释放相机与标定服务，允许后续节点重新初始化。
+     * @param owner 初始化相机配置时传入的节点；非所属节点调用无效。
+     * @note 调用前必须停止并等待该节点的采集线程和相机参数回调结束。
+     */
+    void releaseCameraResources(rclcpp::Node* owner);
+
+    /**
      * @brief 设置视觉识别模式
      * @param mode 视觉模式
      */

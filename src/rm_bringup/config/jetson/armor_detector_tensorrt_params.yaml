@@ -1,0 +1,5 @@
+/**:
+  ros__parameters:
+    yolo.backend: tensorrt
+    yolo.model: /ros_ws/record-test/models/0526-fp16.engine
+    yolo.weights: ""

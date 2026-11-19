@@ -27,6 +27,7 @@
 
       tracking_thres: 2
       lost_time_thres: 0.3
+      input_timeout: 0.5  # 完全断流时撤销旧目标，按单调时钟计算秒数
           
     solver:
       use_armor_top: true            # 是否使用平移运动模型(armor_model),仅在 top0 时使用

@@ -30,6 +30,11 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
     FYT_REGISTER_LOGGER("armor_detector", "qd2026-log", INFO);
     FYT_INFO("armor_detector", "Starting ArmorDetectorNode!");
 
+    const int opencv_threads = this->declare_parameter("opencv_threads", 0);
+    if (opencv_threads > 0) {
+        cv::setNumThreads(opencv_threads);
+    }
+
     // Choose detector
     detector_type_ = this->declare_parameter("detector", "tradition");
     detector_ = initDetector();
@@ -188,24 +193,37 @@ ArmorDetectorNode::ArmorDetectorNode(const rclcpp::NodeOptions& options):
     }
 
     if (use_state_machine_camera_) {
-        // 状态机线程模式：启动状态机和图像处理线程
-        state_machine_.initialize(this);
-        state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE);
+        try {
+            // 状态机线程模式：启动状态机和图像处理线程
+            if (!state_machine_.initialize(this)
+                || !state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE)) {
+                throw std::runtime_error("Failed to initialize near-range camera");
+            }
 
-        // 单相机模式下，必须显式开启远距离相机；避免因为强制初始化第二台相机导致 OpenDevice 失败。
-        if (!this->has_parameter("camera_8mm.enable_DeviceSerialNumber")) {
-            this->declare_parameter("camera_8mm.enable_DeviceSerialNumber", false);
-        }
-        const bool enable_far_range_camera =
-            this->get_parameter("camera_8mm.enable_DeviceSerialNumber").as_bool();
-        if (enable_far_range_camera) {
-            state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE);
+            // 单相机模式下，必须显式开启远距离相机；避免重复打开同一设备。
+            if (!this->has_parameter("camera_8mm.enable_DeviceSerialNumber")) {
+                this->declare_parameter("camera_8mm.enable_DeviceSerialNumber", false);
+            }
+            const bool enable_far_range_camera =
+                this->get_parameter("camera_8mm.enable_DeviceSerialNumber").as_bool();
+            if (enable_far_range_camera) {
+                if (!state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_FAR_RANGE)) {
+                    throw std::runtime_error("Failed to initialize far-range camera");
+                }
+            }
+        } catch (...) {
+            state_machine_.releaseCameraResources(this);
+            throw;
         }
     } else {
         // 话题订阅模式：订阅图像话题，使用 imageCallback
+        const int image_qos_depth = this->declare_parameter("image_qos_depth", 5);
+        if (image_qos_depth < 1) {
+            throw std::invalid_argument("image_qos_depth must be positive");
+        }
         img_sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             "image_raw",
-            rclcpp::SensorDataQoS(),
+            rclcpp::SensorDataQoS().keep_last(image_qos_depth),
             std::bind(&ArmorDetectorNode::imageCallback, this, std::placeholders::_1)
         );
     }
@@ -225,6 +243,9 @@ ArmorDetectorNode::~ArmorDetectorNode() {
     }
     if (image_publish_thread_.joinable()) {
         image_publish_thread_.join();
+    }
+    if (use_state_machine_camera_) {
+        state_machine_.releaseCameraResources(this);
     }
 }
 
@@ -258,7 +279,8 @@ void ArmorDetectorNode::image_callback() {
     std_msgs::msg::Header header;
     sensor_msgs::msg::CameraInfo camera_info;
 
-    while (rclcpp::ok()) {
+    while (rclcpp::ok(this->get_node_base_interface()->get_context())
+           && !should_stop_image_publish_) {
         utils::AutoTimer timer("armor_detector", "ArmorDetectorNode::image_callback");
 
         if (!update_state_machine_msg(img, header, camera_info)) {

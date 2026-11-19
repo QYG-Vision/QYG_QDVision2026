@@ -17,12 +17,17 @@ VisionStateMachine& VisionStateMachine::getInstance() {
 }
 
 bool VisionStateMachine::initialize(rclcpp::Node* node, const std::string& config_file) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     if (node == nullptr) {
         FYT_ERROR("vision_state_machine", "Node pointer is null!");
         return false;
     }
 
     if (node_ != nullptr && !camera_configs_.empty()) {
+        if (node_ != node) {
+            FYT_ERROR("vision_state_machine", "Camera resources already belong to another node");
+            return false;
+        }
         FYT_INFO("vision_state_machine", "VisionStateMachine already initialized, skip reinit");
         return true;
     }
@@ -229,6 +234,10 @@ bool VisionStateMachine::initialize(rclcpp::Node* node, const std::string& confi
 }
 
 bool VisionStateMachine::initializeCamera(CameraType camera_type) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (node_ == nullptr) {
+        return false;
+    }
     const auto& config = camera_configs_[camera_type];
 
     try {
@@ -284,6 +293,19 @@ bool VisionStateMachine::initializeCamera(CameraType camera_type) {
         (camera_type == CameraType::CAMERA_NEAR_RANGE ? "near-range" : "far-range")
     );
     return true;
+}
+
+void VisionStateMachine::releaseCameraResources(rclcpp::Node* owner) {
+    std::lock_guard<std::mutex> lock(state_mutex_);
+    if (node_ != owner) {
+        return;
+    }
+    closeCamera(CameraType::CAMERA_NEAR_RANGE);
+    closeCamera(CameraType::CAMERA_FAR_RANGE);
+    // 标定服务必须在 Node 和 ROS 上下文仍有效时销毁，不能留到静态单例析构。
+    camera_info_managers_.clear();
+    node_ = nullptr;
+    current_camera_type_.set(CameraType::CAMERA_NEAR_RANGE);
 }
 
 void VisionStateMachine::load_camera_info_managers(
@@ -415,6 +437,7 @@ void VisionStateMachine::updateTargetDistance(double distance) {
 }
 
 void VisionStateMachine::updateCameraSwitchLogic() {
+    std::lock_guard<std::mutex> lock(state_mutex_);
     double distance = last_target_distance_.get();
     CameraType current_type = current_camera_type_.get();
     TrackerState tracker_state = current_tracker_state_.get();

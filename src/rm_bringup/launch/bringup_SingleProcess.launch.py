@@ -28,6 +28,12 @@ def generate_launch_description():
         with open(os.path.join(profile_dir, 'launch_params.yaml'), encoding='utf-8') as stream:
             launch_params.update(yaml.safe_load(stream))
 
+    inference_backend = os.environ.get('RM_VISION_INFERENCE_BACKEND', '')
+    if inference_backend not in ('', 'openvino', 'tensorrt'):
+        raise ValueError('RM_VISION_INFERENCE_BACKEND must be empty, openvino or tensorrt')
+    if inference_backend and profile != 'jetson':
+        raise ValueError('RM_VISION_INFERENCE_BACKEND requires RM_VISION_PROFILE=jetson')
+
     # replay 模式自身会回放图像和串口，优先级最高，避免和其它输入源冲突
     if launch_params.get('replay', False):
         launch_params['use_state_machine_camera'] = False
@@ -53,7 +59,13 @@ def generate_launch_description():
     def get_profile_params(name):
         """返回可选的部署参数覆盖文件，后面的文件具有更高优先级。"""
         path = os.path.join(profile_dir, '{}_params.yaml'.format(name))
-        return [path] if profile and os.path.isfile(path) else []
+        paths = [path] if profile and os.path.isfile(path) else []
+        if name == 'armor_detector' and inference_backend == 'tensorrt':
+            gpu_path = os.path.join(profile_dir, 'armor_detector_tensorrt_params.yaml')
+            if not os.path.isfile(gpu_path):
+                raise FileNotFoundError(gpu_path)
+            paths.append(gpu_path)
+        return paths
 
     # --- 准备 ComposableNode 列表 ---
     composable_nodes = []

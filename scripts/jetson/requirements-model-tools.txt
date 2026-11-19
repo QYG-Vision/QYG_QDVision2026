@@ -1,0 +1,6 @@
+openvino2onnx==1.0.0
+onnx==1.17.0
+numpy>=1.21,<2
+protobuf==4.25.9
+networkx==3.4.2
+tabulate==0.10.0

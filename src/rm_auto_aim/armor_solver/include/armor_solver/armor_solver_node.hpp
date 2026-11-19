@@ -36,6 +36,7 @@
 // std
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <memory>
 #include <mutex>
@@ -111,6 +112,9 @@ private:
     rclcpp::Time last_time_;
     double dt_;
     double filter_reset_dt_thres_;
+    double input_timeout_;
+    // 由 solver_state_mutex_ 保护；使用单调时钟检测断流，不受 ROS 时间跳变影响。
+    std::optional<std::chrono::steady_clock::time_point> last_input_time_;
 
     // Armor tracker
     double q_pos_v_, q_orientation_yaw_v_;

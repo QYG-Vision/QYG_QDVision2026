@@ -18,6 +18,8 @@
 
 #include "armor_solver/armor_solver_node.hpp"
 
+#include <cmath>
+#include <stdexcept>
 #include <cv_bridge/cv_bridge.h>
 #include <image_transport/image_transport.hpp>
 #include <sensor_msgs/image_encodings.hpp>
@@ -71,6 +73,10 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
     tracker_->tracking_thres = this->declare_parameter("tracker.tracking_thres", 5);
     lost_time_thres_ = this->declare_parameter("tracker.lost_time_thres", 0.3);
     filter_reset_dt_thres_ = this->declare_parameter("tracker.filter_reset_dt_thres", 1.0);
+    input_timeout_ = this->declare_parameter("tracker.input_timeout", 0.5);
+    if (!std::isfinite(input_timeout_) || input_timeout_ <= 0) {
+        throw std::invalid_argument("tracker.input_timeout must be finite and positive");
+    }
 
     // tf2 relevant
     tf2_buffer_ = std::make_shared<tf2_ros::Buffer>(this->get_clock());
@@ -187,10 +193,24 @@ void ArmorSolverNode::timerCallback() {
     control_msg.yaw = 0;
     control_msg.fire_advice = false;
     control_msg.id = "0";
+    control_msg.header.stamp = this->now();
 
     std::lock_guard<std::mutex> lock(solver_state_mutex_);
     if (solver_ == nullptr) {
         return;
+    }
+
+    if (last_input_time_ && std::chrono::duration<double>(
+            std::chrono::steady_clock::now() - *last_input_time_).count() > input_timeout_)
+    {
+        // 图像完全停发时没有空检测帧推进 LOST，必须在独立定时器中撤销旧目标。
+        tracker_->reset();
+        armor_target_ = rm_interfaces::msg::Target();
+        armor_target_.header.frame_id = target_frame_;
+        armor_target_.header.stamp = this->now();
+        target_pub_->publish(armor_target_);
+        last_input_time_.reset();
+        FYT_WARN("armor_solver", "Input timed out after {:.3f}s; target invalidated", input_timeout_);
     }
 
     // If target never detected
@@ -444,7 +464,7 @@ void ArmorSolverNode::armorFrameWorkerLoop() {
         publishArmors(std::move(*armors_msg));
 
         // 发布可视化
-        if (armor_frame.image.empty()) {
+        if (armor_frame.image.empty() || result_img_pub_.getNumSubscribers() == 0) {
             continue;
         }
 
@@ -685,6 +705,7 @@ bool ArmorSolverNode::processArmors(
             target_pub_->publish(std::make_unique<rm_interfaces::msg::Target>(std::move(target_msg))
             );
             last_time_ = time;
+            last_input_time_ = std::chrono::steady_clock::now();
             heartbeat_->publish();
             reprojected_armors.clear();
             return true;
@@ -783,7 +804,10 @@ bool ArmorSolverNode::processArmors(
     target_pub_->publish(std::make_unique<rm_interfaces::msg::Target>(std::move(target_msg)));
 
     last_time_ = time;
-    reprojected_armors = getReprojectedArmors();
+    last_input_time_ = std::chrono::steady_clock::now();
+    if (debug_mode_ && result_img_pub_.getNumSubscribers() > 0) {
+        reprojected_armors = getReprojectedArmors();
+    }
 
     heartbeat_->publish();
     return true;

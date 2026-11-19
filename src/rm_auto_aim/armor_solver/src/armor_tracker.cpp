@@ -33,6 +33,14 @@ Tracker::Tracker(double max_match_distance, double max_match_yaw_diff):
     lost_count_(0),
     state_machine_(qd::utils::VisionStateMachine::getInstance()) {}
 
+void Tracker::reset() noexcept {
+    tracker_state = TrackerState::LOST;
+    detect_count_ = 0;
+    lost_count_ = 0;
+    tracked_id.clear();
+    state_machine_.setTrackerState(tracker_state);
+}
+
 void Tracker::init(const Armors::SharedPtr& armors_msg) noexcept {
     if (armors_msg->armors.empty()) {
         return;

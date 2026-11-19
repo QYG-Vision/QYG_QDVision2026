@@ -9,8 +9,9 @@
     #include <cuda_runtime_api.h>
     #include <fstream>
     #include <iterator>
-    #include <opencv2/dnn.hpp>
     #include <vector>
+
+    #include "armor_detector/cuda_preprocess.hpp"
 
     #if NV_TENSORRT_MAJOR != 10
         #error "The Jetson inference backend requires TensorRT 10.x"
@@ -50,12 +51,20 @@ class TensorRtInference::Impl {
 public:
     ~Impl() {
         // 构造中途失败时也由外层 unique_ptr 回收已经创建的资源。
-        if (stream != nullptr || input_device != nullptr || output_device != nullptr) {
+        if (stream != nullptr || input_device != nullptr || output_device != nullptr
+            || rgb_device != nullptr || rgb_host != nullptr || output_host != nullptr)
+        {
             int previous_device = 0;
             const bool restore = cudaGetDevice(&previous_device) == cudaSuccess;
             cudaSetDevice(device);
             if (stream != nullptr) {
                 cudaStreamSynchronize(stream);
+            }
+            if (graph_exec != nullptr) {
+                cudaGraphExecDestroy(graph_exec);
+            }
+            if (graph != nullptr) {
+                cudaGraphDestroy(graph);
             }
             context.reset();
             engine.reset();
@@ -65,6 +74,15 @@ public:
             }
             if (output_device != nullptr) {
                 cudaFree(output_device);
+            }
+            if (rgb_device != nullptr) {
+                cudaFree(rgb_device);
+            }
+            if (rgb_host != nullptr) {
+                cudaFreeHost(rgb_host);
+            }
+            if (output_host != nullptr) {
+                cudaFreeHost(output_host);
             }
             if (stream != nullptr) {
                 cudaStreamDestroy(stream);
@@ -134,12 +152,20 @@ public:
                 "use the original four-corner armor model, without embedded preprocessing/NMS"
             );
         }
-        output.create(static_cast<int>(output_shape.d[1]), 22, CV_32F);
+        const auto output_rows = static_cast<int>(output_shape.d[1]);
         context.reset(engine->createExecutionContext());
         if (context == nullptr) {
             throw std::runtime_error("Cannot create TensorRT execution context; see TensorRT log");
         }
-        check_cuda(cudaStreamCreate(&stream), "cudaStreamCreate");
+        check_cuda(cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking), "cudaStreamCreate");
+        check_cuda(cudaMallocHost(&rgb_host, RGB_BYTES), "cudaMallocHost RGB");
+        check_cuda(
+            cudaMallocHost(&output_host, static_cast<std::size_t>(output_rows) * 22 * sizeof(float)),
+            "cudaMallocHost output"
+        );
+        input = cv::Mat(640, 640, CV_8UC3, rgb_host);
+        output = cv::Mat(output_rows, 22, CV_32F, output_host);
+        check_cuda(cudaMalloc(&rgb_device, RGB_BYTES), "cudaMalloc RGB");
         check_cuda(cudaMalloc(&input_device, INPUT_BYTES), "cudaMalloc input");
         check_cuda(cudaMalloc(&output_device, output.total() * sizeof(float)), "cudaMalloc output");
         if (!context->setTensorAddress(input_name.c_str(), input_device)
@@ -147,6 +173,61 @@ public:
         {
             throw std::runtime_error("Cannot bind TensorRT I/O buffers; see TensorRT log");
         }
+    }
+
+    /** @brief 在同一非阻塞流上提交传输、预处理、模型和结果回传。 */
+    void enqueue() {
+        check_cuda(cudaMemcpyAsync(rgb_device, rgb_host, RGB_BYTES,
+                                   cudaMemcpyHostToDevice, stream), "cudaMemcpyAsync input");
+        check_cuda(normalizeRgbCuda(static_cast<const std::uint8_t*>(rgb_device),
+                                    static_cast<float*>(input_device), 640 * 640, stream),
+                   "normalizeRgbCuda");
+        if (!context->enqueueV3(stream)) {
+            throw std::runtime_error("TensorRT enqueueV3 failed; see TensorRT log");
+        }
+        check_cuda(cudaMemcpyAsync(output_host, output_device, output.total() * sizeof(float),
+                                   cudaMemcpyDeviceToHost, stream), "cudaMemcpyAsync output");
+    }
+
+    /**
+     * @brief 正常推理预热后捕获固定地址的执行图，不兼容时保留普通提交路径。
+     * @note 仅尝试一次；捕获期间不改变上下文、形状或任何缓冲区地址。
+     */
+    void capture_graph() {
+        capture_attempted = true;
+        auto status = cudaStreamBeginCapture(stream, cudaStreamCaptureModeThreadLocal);
+        if (status != cudaSuccess) {
+            std::fprintf(stderr, "[TensorRT] CUDA graph capture unavailable: %s\n",
+                         cudaGetErrorString(status));
+            cudaGetLastError();
+            return;
+        }
+        bool enqueued = true;
+        try {
+            enqueue();
+        } catch (const std::exception& error) {
+            enqueued = false;
+            std::fprintf(stderr, "[TensorRT] CUDA graph enqueue failed: %s\n", error.what());
+        }
+        // 即使提交失败也必须结束捕获，解除流的捕获状态。
+        status = cudaStreamEndCapture(stream, &graph);
+        if (status == cudaSuccess && enqueued && graph != nullptr) {
+            status = cudaGraphInstantiate(&graph_exec, graph, 0);
+        }
+        if (status != cudaSuccess || !enqueued || graph_exec == nullptr) {
+            if (graph_exec != nullptr) {
+                cudaGraphExecDestroy(graph_exec);
+                graph_exec = nullptr;
+            }
+            if (graph != nullptr) {
+                cudaGraphDestroy(graph);
+                graph = nullptr;
+            }
+            cudaGetLastError();
+            std::fprintf(stderr, "[TensorRT] CUDA graph unavailable; using regular enqueue\n");
+            return;
+        }
+        std::fprintf(stderr, "[TensorRT] CUDA graph enabled (transfer + preprocess + inference)\n");
     }
 
     TensorRtLogger logger;
@@ -157,15 +238,24 @@ public:
     std::string output_name;
     int device = 0;
     cudaStream_t stream = nullptr;
+    cudaGraph_t graph = nullptr;
+    cudaGraphExec_t graph_exec = nullptr;
+    bool use_cuda_graph = true;
+    bool capture_attempted = false;
     void* input_device = nullptr;
     void* output_device = nullptr;
+    void* rgb_device = nullptr;
+    void* rgb_host = nullptr;
+    void* output_host = nullptr;
     cv::Mat input;
     cv::Mat output;
     static constexpr size_t INPUT_BYTES = 3 * 640 * 640 * sizeof(float);
+    static constexpr size_t RGB_BYTES = 3 * 640 * 640;
 };
 
-TensorRtInference::TensorRtInference(const std::string& engine_path):
+TensorRtInference::TensorRtInference(const std::string& engine_path, bool use_cuda_graph):
     impl_(std::make_unique<Impl>()) {
+    impl_->use_cuda_graph = use_cuda_graph;
     impl_->initialize(engine_path);
 }
 
@@ -176,42 +266,23 @@ cv::Mat TensorRtInference::infer(const cv::Mat& rgb_image) {
         throw std::invalid_argument("TensorRT input must be a 640x640 CV_8UC3 RGB image");
     }
     check_cuda(cudaSetDevice(impl_->device), "cudaSetDevice");
-    // 保持 OpenVINO 路径的 RGB、左上角对齐补黑边和除以 255 的处理约定。
-    cv::dnn::blobFromImage(
-        rgb_image,
-        impl_->input,
-        1.0 / 255.0,
-        cv::Size(),
-        cv::Scalar(),
-        false,
-        false,
-        CV_32F
-    );
-    check_cuda(
-        cudaMemcpyAsync(
-            impl_->input_device,
-            impl_->input.data,
-            Impl::INPUT_BYTES,
-            cudaMemcpyHostToDevice,
-            impl_->stream
-        ),
-        "cudaMemcpyAsync input"
-    );
-    if (!impl_->context->enqueueV3(impl_->stream)) {
-        throw std::runtime_error("TensorRT enqueueV3 failed; see TensorRT log");
+    // 固定页内存支持真正异步传输；保留原 RGB 和缩放补边规则。
+    rgb_image.copyTo(impl_->input);
+    if (impl_->graph_exec != nullptr) {
+        check_cuda(cudaGraphLaunch(impl_->graph_exec, impl_->stream), "cudaGraphLaunch");
+    } else {
+        impl_->enqueue();
     }
-    check_cuda(
-        cudaMemcpyAsync(
-            impl_->output.data,
-            impl_->output_device,
-            impl_->output.total() * sizeof(float),
-            cudaMemcpyDeviceToHost,
-            impl_->stream
-        ),
-        "cudaMemcpyAsync output"
-    );
     check_cuda(cudaStreamSynchronize(impl_->stream), "cudaStreamSynchronize");
+    if (impl_->use_cuda_graph && !impl_->capture_attempted) {
+        // 首帧正常执行以完成 TensorRT 延迟初始化，再捕获后续帧共用的执行序列。
+        impl_->capture_graph();
+    }
     return impl_->output;
+}
+
+bool TensorRtInference::usesCudaGraph() const noexcept {
+    return impl_->graph_exec != nullptr;
 }
 
 } // namespace qd::auto_aim
@@ -222,7 +293,7 @@ namespace qd::auto_aim {
 
 class TensorRtInference::Impl {};
 
-TensorRtInference::TensorRtInference(const std::string&) {
+TensorRtInference::TensorRtInference(const std::string&, bool) {
     throw std::runtime_error(
         "TensorRT backend is disabled; rebuild armor_detector with -DENABLE_TENSORRT=ON "
         "inside the Jetson CUDA/TensorRT development container"
@@ -233,6 +304,10 @@ TensorRtInference::~TensorRtInference() = default;
 
 cv::Mat TensorRtInference::infer(const cv::Mat&) {
     throw std::runtime_error("TensorRT backend is disabled");
+}
+
+bool TensorRtInference::usesCudaGraph() const noexcept {
+    return false;
 }
 
 } // namespace qd::auto_aim

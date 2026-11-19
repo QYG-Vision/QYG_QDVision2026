@@ -54,10 +54,10 @@ public:
     cv::Mat get_cv_img();
 
     /**
-     * @brief 直接调用sdk获得图像，不单独开启相机线程用
-     * 
-     * @param img 
-     * @param timestamp 
+     * @brief 直接从 SDK 取帧并转换为独立持有数据的 RGB8 图像。
+     * @param img 输出图像，取帧或转换失败时清空。
+     * @param timestamp 输出时间戳，失败时清零。
+     * @note 最多等待 SDK 1000 毫秒；不可与守护线程同时取帧。
      */
     void get_img(cv::Mat& img, std::chrono::system_clock::time_point& timestamp);
 
@@ -133,7 +133,9 @@ private:
     MV_CC_PIXEL_CONVERT_PARAM convert_param; // 像素格式转换参数结构体
 
     int nRet = MV_OK; // 函数返回值
-    std::chrono::system_clock::duration half_exposure_duration; // 相机曝光一半时间
+    std::atomic<std::chrono::system_clock::duration> half_exposure_duration {
+        std::chrono::system_clock::duration::zero()
+    }; // 曝光中点计算使用原子快照，避免与在线调参发生数据竞争
 
     std::thread daemon_thread_; // 守护线程
     std::atomic<bool> running_;

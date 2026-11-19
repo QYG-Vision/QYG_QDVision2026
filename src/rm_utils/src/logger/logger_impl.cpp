@@ -16,6 +16,7 @@
 #include "rm_utils/logger/impl/logger_impl.hpp"
 
 #include <chrono>
+#include <cstdlib>
 #include <iomanip>
 #include <string>
 #include <utility>
@@ -31,6 +32,15 @@ namespace internal {
 
 Logger::Logger(std::string name, std::string filename, LogLevel level, LogOptions ops)
 : consle_mutex_(GlobalMutex::getConsoleMutex()), name_(name), level_(level) {
+  // 默认保留原有文件日志行为，Jetson 可显式过滤高频 DEBUG 写盘。
+  if (const char *value = std::getenv("RM_LOG_FILE_LEVEL")) {
+    for (std::uint8_t index = 0; index < 5; ++index) {
+      if (std::string(value) == LogNameTable[index]) {
+        file_level_ = static_cast<LogLevel>(index);
+        break;
+      }
+    }
+  }
   std::time_t tt = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
   std::tm tm = *std::localtime(&tt);
   std::stringstream ss;

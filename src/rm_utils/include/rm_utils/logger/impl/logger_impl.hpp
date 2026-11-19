@@ -40,6 +40,9 @@ namespace internal {
 
         template<typename... Args>
         void log(LogLevel level, const std::string& format, Args... args) {
+            if (level < file_level_ && level < level_) {
+                return;
+            }
             std::string log_info = fmt::format(format, args...);
             std::string level_prefix =
                 fmt::format("[{}] ", LogNameTable[static_cast<std::uint8_t>(level)]);
@@ -48,9 +51,9 @@ namespace internal {
             std::string message =
                 fmt::format("{} {} {}: {}", level_prefix, name_prefix, log_time, log_info);
 
-            std::string colored_message =
-                fmt::format(LogColorTable[static_cast<std::uint8_t>(level)], message);
-            writer_->write(colored_message);
+            if (level >= file_level_) {
+                writer_->write(fmt::format(LogColorTable[static_cast<std::uint8_t>(level)], message));
+            }
             if (level >= this->level_) {
                 std::lock_guard<std::mutex> lock(consle_mutex_);
                 fmt::print(fg(LogFmtColorTable[static_cast<std::uint8_t>(level)]), "{}\n", message);
@@ -98,6 +101,7 @@ namespace internal {
         std::mutex& consle_mutex_;
         std::string name_;
         LogLevel level_;
+        LogLevel file_level_ = LogLevel::DEBUG;
         std::unique_ptr<Writer> writer_;
     };
 } // namespace internal

@@ -1,0 +1,16 @@
+# 先构建 CPU 基础镜像，再与主配置、Jetson 配置按此顺序合并。
+services:
+  rv_devel:
+    build:
+      dockerfile: Dockerfile.jetson-gpu
+      args:
+        BASE_IMAGE: qyg-vision:jetson-jp6
+        L4T_APT_BRANCH: r36.5
+        TENSORRT_VERSION: 10.3.0.30-1+cuda12.5
+        CUDA_PACKAGE_VERSION: 12.6.68-1
+    image: qyg-vision:jetson-jp6-gpu
+    environment:
+      ENABLE_TENSORRT: "ON"
+      MAKEFLAGS: "-j2 -l2"
+      RM_VISION_INFERENCE_BACKEND: tensorrt
+      RM_LOG_FILE_LEVEL: INFO

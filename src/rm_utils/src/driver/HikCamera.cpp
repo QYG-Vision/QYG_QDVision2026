@@ -1,5 +1,8 @@
 #include "rm_utils/driver/HikCamera.hpp"
 
+#include <limits>
+#include <memory>
+
 namespace qd::Device {
 
 HikCamera::HikCamera(const Parameters& params): queue_(1), camera_handle_(nullptr), running_(true) {
@@ -46,69 +49,82 @@ void HikCamera::image_callback() {
 }
 
 void HikCamera::get_img(cv::Mat& img, std::chrono::system_clock::time_point& timestamp) {
+    img.release();
+    timestamp = {};
     if (this->camera_handle_ == nullptr) {
         std::cout << " camera_handle_ is null!!!" << std::endl;
         return;
     }
 
     // 获得图像缓存
-    nRet = MV_CC_GetImageBuffer(camera_handle_, &out_frame_buffer_, 1000);
-    if (nRet != MV_OK) {
-        img = cv::Mat();
-        timestamp = std::chrono::system_clock::time_point();
-        printf("No image data! nRet [0x%x]\n", nRet);
+    MV_FRAME_OUT frame {};
+    const int grab_result = MV_CC_GetImageBuffer(camera_handle_, &frame, 1000);
+    if (grab_result != MV_OK) {
+        printf("No image data! nRet [0x%x]\n", grab_result);
         return;
     }
 
-    auto img_time = get_time(out_frame_buffer_.stFrameInfo.nHostTimeStamp);
+    // SDK 缓冲区必须在所有失败路径和 OpenCV 异常路径上归还。
+    auto release_frame = [this](MV_FRAME_OUT* buffer) {
+        MV_CC_FreeImageBuffer(camera_handle_, buffer);
+    };
+    std::unique_ptr<MV_FRAME_OUT, decltype(release_frame)> frame_guard(&frame, release_frame);
+    const auto& info = frame.stFrameInfo;
+    const size_t pixel_count = static_cast<size_t>(info.nWidth) * info.nHeight;
+    if (!frame.pBufAddr || pixel_count == 0 || info.nFrameLen == 0
+        || pixel_count > std::numeric_limits<unsigned int>::max() / 3)
+    {
+        FYT_WARN("hik_camera", "Invalid image buffer or dimensions");
+        return;
+    }
 
-    // 存储数据进队列
-    cv::Mat dst_img(
-        cv::Size(out_frame_buffer_.stFrameInfo.nWidth, out_frame_buffer_.stFrameInfo.nHeight),
-        CV_8UC3
-    );
-    // 像素格式转换
-    convert_param.nWidth = out_frame_buffer_.stFrameInfo.nWidth;
-    convert_param.nHeight = out_frame_buffer_.stFrameInfo.nHeight;
-    // 输入src
-    convert_param.enSrcPixelType = out_frame_buffer_.stFrameInfo.enPixelType;
-    convert_param.pSrcData = out_frame_buffer_.pBufAddr;
-    convert_param.nSrcDataLen = out_frame_buffer_.stFrameInfo.nFrameLen;
-    // 输出dst
-    convert_param.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
-    convert_param.pDstBuffer = dst_img.data; // 输出数据缓冲区
-    convert_param.nDstBufferSize =
-        out_frame_buffer_.stFrameInfo.nExtendWidth * out_frame_buffer_.stFrameInfo.nExtendHeight * 4
-        + 2048;
-    // 执行转换
     auto start = std::chrono::high_resolution_clock::now();
-    if (this->params_.enable_opencv) {
-        // 使用 opencv 进行插值
-        auto pixel_type = out_frame_buffer_.stFrameInfo.enPixelType;
+    cv::Mat dst_img;
+    try {
+        // OpenCV 短 Bayer 名称与传感器排列相反；以下映射输出 RGB，兼容旧版 OpenCV。
         const static std::unordered_map<MvGvspPixelType, cv::ColorConversionCodes> type_map = {
             { PixelType_Gvsp_BayerGR8, cv::COLOR_BayerGR2BGR },
             { PixelType_Gvsp_BayerRG8, cv::COLOR_BayerRG2BGR },
             { PixelType_Gvsp_BayerGB8, cv::COLOR_BayerGB2BGR },
             { PixelType_Gvsp_BayerBG8, cv::COLOR_BayerBG2BGR }
         };
-        dst_img = cv::Mat(
-            cv::Size(out_frame_buffer_.stFrameInfo.nWidth, out_frame_buffer_.stFrameInfo.nHeight),
-            CV_8U,
-            out_frame_buffer_.pBufAddr
-        );
-        cv::cvtColor(dst_img, dst_img, type_map.at(pixel_type));
-    } else {
-        nRet = MV_CC_ConvertPixelType(camera_handle_, &convert_param);
+        const auto conversion = type_map.find(info.enPixelType);
+        if (params_.enable_opencv && conversion != type_map.end()) {
+            if (info.nFrameLen < pixel_count) {
+                FYT_WARN("hik_camera", "Truncated Bayer image buffer");
+                return;
+            }
+            cv::Mat raw(info.nHeight, info.nWidth, CV_8UC1, frame.pBufAddr);
+            cv::cvtColor(raw, dst_img, conversion->second);
+        } else {
+            dst_img.create(info.nHeight, info.nWidth, CV_8UC3);
+            MV_CC_PIXEL_CONVERT_PARAM convert_param {};
+            convert_param.nWidth = info.nWidth;
+            convert_param.nHeight = info.nHeight;
+            convert_param.enSrcPixelType = info.enPixelType;
+            convert_param.pSrcData = frame.pBufAddr;
+            convert_param.nSrcDataLen = info.nFrameLen;
+            convert_param.enDstPixelType = PixelType_Gvsp_RGB8_Packed;
+            convert_param.pDstBuffer = dst_img.data;
+            convert_param.nDstBufferSize =
+                static_cast<unsigned int>(dst_img.total() * dst_img.elemSize());
+            const int convert_result = MV_CC_ConvertPixelType(camera_handle_, &convert_param);
+            if (convert_result != MV_OK || convert_param.nDstLen != convert_param.nDstBufferSize) {
+                FYT_WARN("hik_camera", "Pixel conversion failed or returned incomplete RGB data: {:#x}",
+                         convert_result);
+                return;
+            }
+        }
+    } catch (const cv::Exception& e) {
+        FYT_WARN("hik_camera", "Pixel conversion failed: {}", e.what());
+        return;
     }
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double, std::milli> elapsed = end - start;
     FYT_DEBUG("hik_camera", "Latecy(ConvertPixel) : {:.2f} ms", elapsed.count());
     
     img = dst_img;
-    timestamp = img_time;
-
-    // 释放图像缓存
-    MV_CC_FreeImageBuffer(camera_handle_, &out_frame_buffer_);
+    timestamp = get_time(info.nHostTimeStamp);
 }
 
 cv::Mat HikCamera::get_cv_img() {
@@ -123,11 +139,15 @@ void HikCamera::read_img(cv::Mat& img, std::chrono::system_clock::time_point& ti
 
 void* HikCamera::get_camera_handle(const Parameters& params) {
     void* handle = nullptr;
-    MVCC_STRINGVALUE string_value;
+    MVCC_STRINGVALUE string_value {};
 
     // 枚举设备
-    MV_CC_DEVICE_INFO_LIST device_list;
+    MV_CC_DEVICE_INFO_LIST device_list {};
     nRet = MV_CC_EnumDevices(MV_USB_DEVICE, &device_list);
+    if (nRet != MV_OK) {
+        printf("EnumDevices failed! nRet [0x%x]\n", nRet);
+        return nullptr;
+    }
 
     // 等待设备连接
     int count = 4;
@@ -140,6 +160,9 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         }
 
         nRet = MV_CC_EnumDevices(MV_USB_DEVICE, &device_list);
+        if (nRet != MV_OK) {
+            return nullptr;
+        }
     }
 
     // 查找序列号
@@ -166,14 +189,16 @@ void* HikCamera::get_camera_handle(const Parameters& params) {
         }
 
         // 获取序列号
-        MV_CC_GetStringValue(handle, "DeviceSerialNumber", &string_value);
+        string_value = {};
+        const int serial_result = MV_CC_GetStringValue(handle, "DeviceSerialNumber", &string_value);
         std::cout << "Found DeviceSerialNumber: " << string_value.chCurValue << std::endl;
 
         MV_CC_CloseDevice(handle);
         MV_CC_DestroyHandle(handle);
 
         // 比较序列号
-        if (std::string(string_value.chCurValue) == params.device_serial_number) {
+        if (serial_result == MV_OK
+            && std::string(string_value.chCurValue) == params.device_serial_number) {
             device_info = device;
             std::cout << "Found Target DeviceSerialNumber: " << string_value.chCurValue
                       << std::endl;
@@ -265,21 +290,15 @@ void HikCamera::update_camera_setting() {
 }
 
 std::chrono::system_clock::time_point HikCamera::get_time() {
-    return std::chrono::system_clock::now() - this->half_exposure_duration;
+    return std::chrono::system_clock::now() - this->half_exposure_duration.load();
 }
 
 std::chrono::system_clock::time_point HikCamera::get_time(const int64_t& nHostTimeStamp) {
     // 1. 将 int64_t 的 ms 转换为毫秒 duration
     auto host_ts_duration = std::chrono::milliseconds(nHostTimeStamp);
 
-    // 2. 处理 double 类型的曝光时间（单位 us），使用 duration<double, micro> 保持浮点精度
-    std::chrono::duration<double, std::micro> half_exposure_duration(
-        this->params_.exposure_time / 2.0
-    );
-
-    // 3. 计算曝光中点的总持续时间（系统会自动转换单位为 us，因为 us 精度更高）
-    // 此时 result_duration 是一个以微秒为单位的浮点型 duration
-    auto result_duration = host_ts_duration - half_exposure_duration;
+    // 2. 曝光由参数回调线程更新，这里只读取一次快照。
+    auto result_duration = host_ts_duration - this->half_exposure_duration.load();
 
     // 4. 将结果转换回系统时钟的 time_point
     // 注意：system_clock::time_point 通常是整数，需要进行 duration_cast

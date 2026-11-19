@@ -8,6 +8,7 @@
 // c++ 
 #include <chrono>
 #include <atomic>
+#include <cmath>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -36,10 +37,15 @@ public:
     image_pub_ = this->create_publisher<sensor_msgs::msg::Image>("image_raw", qos);
     camera_info_pub_ = this->create_publisher<sensor_msgs::msg::CameraInfo>("camera_info", qos);
 
-    state_machine_.initialize(this);
-    if (!state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE)) {
-      RCLCPP_FATAL(this->get_logger(), "Failed to initialize near-range camera in VisionStateMachine");
-      throw std::runtime_error("Failed to initialize camera in VisionStateMachine");
+    try {
+      if (!state_machine_.initialize(this)
+          || !state_machine_.initializeCamera(qd::utils::CameraType::CAMERA_NEAR_RANGE)) {
+        RCLCPP_FATAL(this->get_logger(), "Failed to initialize near-range camera in VisionStateMachine");
+        throw std::runtime_error("Failed to initialize camera in VisionStateMachine");
+      }
+    } catch (...) {
+      state_machine_.releaseCameraResources(this);
+      throw;
     }
 
     params_callback_handle_ = this->add_on_set_parameters_callback(
@@ -54,6 +60,7 @@ public:
     if (capture_thread_.joinable()) {
       capture_thread_.join();
     }
+    state_machine_.releaseCameraResources(this);
     RCLCPP_INFO(this->get_logger(), "HikCameraNode destroyed!");
   }
 
@@ -130,15 +137,31 @@ private:
   {
     rcl_interfaces::msg::SetParametersResult result;
     result.successful = true;
+    const std::string camera_prefix = state_machine_.getCurrentCameraType()
+        == qd::utils::CameraType::CAMERA_NEAR_RANGE ? "camera_6mm." : "camera_8mm.";
+    // 先校验整批参数，防止后续参数被拒绝时，前面的设置已经写入相机。
     for (const auto & param : parameters) {
-      if (param.get_name() == "exposure_time") {
-        state_machine_.updateExposureTime(param.as_double());
-      } else if (param.get_name() == "gain") {
-        state_machine_.updateGain(param.as_double());
-      } else {
+      const bool is_exposure = param.get_name() == camera_prefix + "exposure_time";
+      const bool is_gain = param.get_name() == camera_prefix + "gain";
+      if (!is_exposure && !is_gain) {
         result.successful = false;
-        result.reason = "Unknown parameter: " + param.get_name();
-        break;
+        result.reason = "Only exposure_time and gain of the active camera can be updated: "
+          + camera_prefix;
+        return result;
+      }
+      if (param.get_type() != rclcpp::ParameterType::PARAMETER_DOUBLE
+          || !std::isfinite(param.as_double())
+          || (is_exposure ? param.as_double() <= 0.0 : param.as_double() < 0.0)) {
+        result.successful = false;
+        result.reason = "Exposure must be a finite positive double; gain must be finite and nonnegative";
+        return result;
+      }
+    }
+    for (const auto & param : parameters) {
+      if (param.get_name() == camera_prefix + "exposure_time") {
+        state_machine_.updateExposureTime(param.as_double());
+      } else {
+        state_machine_.updateGain(param.as_double());
       }
     }
     return result;

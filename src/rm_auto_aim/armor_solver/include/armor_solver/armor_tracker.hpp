@@ -61,6 +61,12 @@ public:
     void init(const Armors::SharedPtr& armors_msg) noexcept;
 
     /**
+     * @brief 撤销当前跟踪并清零连续检测/丢失计数，下一次观测重新初始化滤波器。
+     * @note 调用方须持有解算状态锁；旧滤波状态在 LOST 期间不得用于生成有效输出。
+     */
+    void reset() noexcept;
+
+    /**
      * @brief 将运动状态推进到本帧时刻，并使用匹配的装甲板观测校正。
      * @param armors_msg 跟踪坐标系下的当前帧观测；列表为空时仅预测并更新丢失状态。
      * @note 调用前须将两个 EKF 的预测时间间隔设为相邻图像的实际时间差。

@@ -123,5 +123,46 @@ namespace {
         EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
     }
 
+    TEST_F(TrackerPredictionTest, reset_requires_fresh_consecutive_detections) {
+        tracker_->reset();
+        EXPECT_EQ(tracker_->tracker_state, TrackerState::LOST);
+        EXPECT_TRUE(tracker_->tracked_id.empty());
+        tracker_->init(initial_frame_);
+        for (int i = 0; i < tracker_->tracking_thres; ++i) {
+            tracker_->update(initial_frame_);
+        }
+        ASSERT_EQ(tracker_->tracker_state, TrackerState::DETECTING);
+
+        // 中断前已经积累的连续检测次数不能用于中断后的确认。
+        tracker_->reset();
+        tracker_->init(initial_frame_);
+        for (int i = 0; i < tracker_->tracking_thres; ++i) {
+            tracker_->update(initial_frame_);
+            EXPECT_EQ(tracker_->tracker_state, TrackerState::DETECTING);
+        }
+        tracker_->update(initial_frame_);
+        EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+    }
+
+    TEST_F(TrackerPredictionTest, reset_discards_previous_missing_frame_count) {
+        const auto missing = std::make_shared<Tracker::Armors>();
+        for (int i = 0; i < 3; ++i) {
+            tracker_->update(missing);
+        }
+        ASSERT_EQ(tracker_->tracker_state, TrackerState::TEMP_LOST);
+        tracker_->reset();
+        tracker_->init(initial_frame_);
+        for (int i = 0; i <= tracker_->tracking_thres; ++i) {
+            tracker_->update(initial_frame_);
+        }
+        ASSERT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+        for (int i = 0; i < tracker_->lost_thres; ++i) {
+            tracker_->update(missing);
+            EXPECT_EQ(tracker_->tracker_state, TrackerState::TEMP_LOST);
+        }
+        tracker_->update(missing);
+        EXPECT_EQ(tracker_->tracker_state, TrackerState::LOST);
+    }
+
 } // namespace
 } // namespace qd::auto_aim

@@ -74,9 +74,14 @@ std::vector<rm_interfaces::msg::Armor> ArmorPoseEstimator::extractArmorPoses(
     Eigen::Matrix3d R_imu_camera
 ) {
     std::vector<rm_interfaces::msg::Armor> armors_msg;
+    armors_msg.reserve(armors.size());
+    std::vector<cv::Mat> rvecs, tvecs;
+    rvecs.reserve(2);
+    tvecs.reserve(2);
 
     for (const auto& armor: armors) {
-        std::vector<cv::Mat> rvecs, tvecs;
+        rvecs.clear();
+        tvecs.clear();
 
         // Use PnP to get the initial pose information
         if (pnp_solver_->solvePnPGeneric(

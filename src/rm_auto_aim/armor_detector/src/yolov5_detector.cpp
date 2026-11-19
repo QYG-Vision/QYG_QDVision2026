@@ -7,6 +7,7 @@
 #include <opencv2/dnn.hpp>
 #include <opencv2/imgproc.hpp>
 //std
+#include <cstdlib>
 #include <string>
 #include <stdexcept>
 #include <vector>
@@ -31,7 +32,14 @@ Yolov5Detector::Yolov5Detector(
     this->detect_color = color;
     input_buffer_ = cv::Mat::zeros(IMAGE_HEIGHT, IMAGE_WIDTH, CV_8UC3);
     if (backend == "tensorrt") {
-        tensorrt_ = std::make_unique<TensorRtInference>(model_path_xml);
+        const char* graph_mode = std::getenv("RM_TENSORRT_CUDA_GRAPH");
+        if (graph_mode != nullptr && std::string(graph_mode) != "0"
+            && std::string(graph_mode) != "1")
+        {
+            throw std::invalid_argument("RM_TENSORRT_CUDA_GRAPH must be 0 or 1");
+        }
+        const bool use_graph = graph_mode == nullptr || std::string(graph_mode) == "1";
+        tensorrt_ = std::make_unique<TensorRtInference>(model_path_xml, use_graph);
         return;
     }
     if (backend != "openvino") {

@@ -2,13 +2,15 @@
 """在目标 Jetson 上将四角点装甲板 ONNX 转为 TensorRT 10 engine。"""
 
 import argparse
+import hashlib
+import json
 from pathlib import Path
 
 
 def main():
     """验证输入输出约定后构建模型，失败时不写入 engine 文件。"""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('onnx', type=Path, help='0526 对应的原始四角点装甲板 ONNX')
+    parser.add_argument('onnx', type=Path, help='0526 对应的原始或已验证转换的四角点装甲板 ONNX')
     parser.add_argument('--output', type=Path,
                         default=Path('src/rm_auto_aim/armor_detector/model/0526.engine'))
     parser.add_argument('--workspace-mib', type=int, default=1024)
@@ -49,6 +51,8 @@ def main():
         parser.error('模型输入输出须为 FP32；预处理和角点后处理由检测器执行')
     input_tensor.shape = expected_shape
     config = builder.create_builder_config()
+    # FP32 对照禁用 TF32，避免把精度模式差异混入后端一致性检查。
+    config.clear_flag(trt.BuilderFlag.TF32)
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, args.workspace_mib << 20)
     if args.fp16:
         config.set_flag(trt.BuilderFlag.FP16)
@@ -74,6 +78,17 @@ def main():
             parser.error(f'不兼容的 engine 张量：{name} {shape}；要求 FP32 LINEAR，输出 [1,N,22]')
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_bytes(bytes(serialized))
+    metadata = {
+        'onnx_sha256': hashlib.sha256(args.onnx.read_bytes()).hexdigest(),
+        'engine_sha256': hashlib.sha256(args.output.read_bytes()).hexdigest(),
+        'tensorrt_version': trt.__version__,
+        'precision': 'fp16_allowed' if args.fp16 else 'fp32',
+        'tf32_enabled': False,
+        'input_shape': list(expected_shape),
+        'output_shape': list(output_tensor.shape),
+    }
+    args.output.with_suffix(args.output.suffix + '.json').write_text(
+        json.dumps(metadata, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     print(f'已生成 {args.output.resolve()}，TensorRT {trt.__version__}；请仅用于当前设备环境。')
 
 

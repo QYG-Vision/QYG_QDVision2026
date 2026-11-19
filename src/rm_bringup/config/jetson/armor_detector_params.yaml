@@ -1,8 +1,10 @@
 /**:
   ros__parameters:
     debug: false
+    image_qos_depth: 1
+    opencv_threads: 1
     detector: yolo
-    # 使用已有 IR 模型验证流程；完成 engine 生成后切换 yolo.backend 和 yolo.model。
+    # CPU 基线使用已有 IR；GPU Compose 另行追加 TensorRT 覆盖文件。
     device: CPU
     yolo.backend: openvino
     yolo.model: package://armor_detector/model/IR/0526.xml

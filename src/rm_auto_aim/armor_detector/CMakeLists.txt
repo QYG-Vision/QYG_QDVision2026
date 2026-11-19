@@ -7,8 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 ## By adding -Wall and -Werror, the compiler does not ignore warnings anymore,
 ## enforcing cleaner code.
-add_definitions(-Wall -Werror)
-add_definitions(-O3)
+add_compile_options("$<$<COMPILE_LANGUAGE:CXX>:-Wall;-Werror>" -O3)
 
 
 ## Export compile commands for clangd
@@ -29,6 +28,12 @@ find_package(fmt REQUIRED)
 find_package(OpenVINO REQUIRED COMPONENTS Runtime)
 option(ENABLE_TENSORRT "Build the TensorRT 10 inference backend" OFF)
 if(ENABLE_TENSORRT)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES AND CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|arm64")
+    set(CMAKE_CUDA_ARCHITECTURES 87)
+  endif()
+  enable_language(CUDA)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
   find_path(TENSORRT_INCLUDE_DIR NvInfer.h PATH_SUFFIXES aarch64-linux-gnu x86_64-linux-gnu)
   find_library(TENSORRT_LIBRARY nvinfer)
   find_package(CUDAToolkit REQUIRED)
@@ -50,6 +55,7 @@ ament_auto_add_library(${PROJECT_NAME} SHARED
 )
 
 if(ENABLE_TENSORRT)
+  target_sources(${PROJECT_NAME} PRIVATE src/cuda_preprocess.cu)
   target_compile_definitions(${PROJECT_NAME} PRIVATE QD_HAS_TENSORRT)
   target_include_directories(${PROJECT_NAME} SYSTEM PRIVATE ${TENSORRT_INCLUDE_DIR})
   target_link_libraries(${PROJECT_NAME} ${TENSORRT_LIBRARY} CUDA::cudart)
@@ -99,8 +105,16 @@ if(BUILD_TESTING)
   find_package(ament_cmake_gtest)
   ament_add_gtest(test_detector test/test_detector.cpp)
   target_link_libraries(test_detector ${PROJECT_NAME})
+  ament_add_gtest(test_camera_lifecycle test/test_camera_lifecycle.cpp TIMEOUT 15)
+  target_link_libraries(test_camera_lifecycle ${PROJECT_NAME})
   ament_add_gtest(test_yolo_backends test/test_yolo_backends.cpp)
   target_link_libraries(test_yolo_backends ${PROJECT_NAME})
+  if(ENABLE_TENSORRT)
+    ament_add_gtest(test_cuda_preprocess test/test_cuda_preprocess.cpp)
+    target_link_libraries(test_cuda_preprocess ${PROJECT_NAME} CUDA::cudart)
+    add_executable(benchmark_tensorrt test/benchmark_tensorrt.cpp)
+    target_link_libraries(benchmark_tensorrt ${PROJECT_NAME})
+  endif()
 
 endif()
 

@@ -6,15 +6,14 @@
 大电脑仅用于把新改动提交、推送到 GitHub。具体代码改动见
 [Jetson 适配改动说明](jetson_changes.md)。
 
-当前先走 **OpenVINO CPU** 路线，使用仓库已有的 `0526.xml/.bin`。完成基础测试
-之后，再处理 TensorRT GPU；当前还缺少对应装甲板 ONNX 和已验证匹配的 GPU
-开发镜像，不能直接把 CPU 参数改成 GPU 就算完成加速。
+本文前 11 节保留 **OpenVINO CPU** 基线和硬件验证步骤。GPU 环境、现有 IR 转 ONNX、
+engine 生成与检测回归统一按 [TensorRT/CUDA 手册](jetson_gpu.md) 执行。
 
 **本机进度（2026-11-19）：** ARM64 镜像与容器已建立，14 个包构建成功，CPU
 自动测试通过，视频与虚拟电控到云台指令输出的六项功能检查通过。当前工作区默认
 启用视频和虚拟串口，视频为 `/ros_ws/test.mp4`、30Hz；Jetson 下自动启动 Foxglove
 关闭，可按[上车测试步骤](自瞄上车测试步骤.md)第 5 节手动启动。真实相机、真实串口
-及 TensorRT GPU 尚未验收。
+仍需接入后验收；GPU 的最新进度见 [GPU 记录](jetson_changes.md#10-tensorrtcuda-适配与性能验收)。
 详细结果和本次相对 `71460d6` 的改动见
 [本次工作区改动与验收](jetson_changes.md#9-2026-11-19-本次工作区改动与验收)。
 
@@ -390,11 +389,11 @@ bash scripts/jetson/build.sh
 - `/ros_ws` 是宿主机仓库在容器中的挂载位置。
 - `uname -m` 应为 `aarch64`；环境变量应输出 `jetson`。
 - `source ...setup.bash` 让当前 shell 能找到 ROS 命令及包。
-- 构建脚本同时编译 1 个包，包内默认 2 个任务，默认关闭 TensorRT 编译。
+- 构建脚本同时编译 1 个包，包内默认 2 个任务；CPU 镜像默认关闭 TensorRT，GPU 镜像默认打开。
 
-脚本还设置 `BUILD_TESTING=OFF`。原因是当前解算包 CMake 引用了不存在的
-`test_solver_motion_switches.cpp`；先编译部署程序，下一步再仅开启检测包测试。
-这不等于自动测试已经通过。
+部署脚本设置 `BUILD_TESTING=OFF`，测试按包单独开启。此前解算包不存在的测试引用
+已经修复，新增的解算与断流回归见 [GPU 手册第 6 节](jetson_gpu.md#6-无硬件断流与持续运行测试)。
+编译成功不等于自动测试通过。
 
 **通过条件：** 最后出现 `Summary: ... packages finished`，没有 `Failed` 或
 `Aborted`。当前工作区此前完整构建为 14 个包，实际数量以当前源码为准。
@@ -433,8 +432,8 @@ CMAKE_BUILD_PARALLEL_LEVEL=2 colcon build \
   --cmake-args -DBUILD_TESTING=ON -DENABLE_TENSORRT=OFF
 ```
 
-这会生成检测包的测试程序。`--packages-select` 只选该包，避免同时开启前面提到
-的缺失解算测试；`ENABLE_TENSORRT=OFF` 表示此阶段不依赖 CUDA/TensorRT 开发库。
+这会生成检测包的测试程序。`--packages-select` 只选该包，独立检查检测链路；
+`ENABLE_TENSORRT=OFF` 表示此 CPU 阶段不依赖 CUDA/TensorRT 开发库。
 
 **通过条件：** 检测包编译成功。若找不到 OpenVINO CPU 插件或模型算子不支持，
 记录完整错误；当前电脑上的测试通过不能替代这一步 ARM 实测。
@@ -1065,165 +1064,15 @@ ros2 topic echo /armor_solver/cmd_gimbal --once --qos-reliability best_effort
 如果端口能打开却没有 `/serial/receive`，继续检查板端是否发数据、波特率、帧长、
 校验和字段约定。先定位通信，再判断检测或跟踪表现。
 
-## 12. TensorRT GPU 阶段：条件具备后再做
+## 12. TensorRT/CUDA GPU 阶段
 
-**作用：** 使用 Orin 的 NVIDIA GPU 执行装甲板模型，并验证与 CPU 路线的结果。
+本机现在提供独立 GPU 镜像、三文件 Compose 覆盖，以及从现有 IR 转 ONNX、生成
+FP32/FP16 engine 的脚本。操作步骤、命令位置、原理及通过条件统一见
+[Jetson TensorRT/CUDA 运行与验收](jetson_gpu.md)，实测结果见
+[GPU 改动与性能记录](jetson_changes.md#10-tensorrtcuda-适配与性能验收)。
 
-**当前停止条件：** 缺少以下任一项，就先完成前面的 CPU 和硬件测试，不要复制
-不存在的镜像地址或把分类模型改名后当作装甲板模型。
-
-1. 对应 `0526.xml/.bin` 的原始四角点装甲板 ONNX 或可导出的训练权重。
-2. 在当前 L4T `36.5.2` 上已验证匹配的 GPU 开发镜像，容器内含 CUDA Toolkit、
-   TensorRT 10 开发库、ONNX parser 和 TensorRT Python 模块。
-
-模型输入为 FP32 `[1,3,640,640]`，输出为 FP32 `[1,N,22]`，保留原 logits 和四角点
-含义。形状符合只是必要条件，仍要验证模型来源和输出语义。`lenet.onnx`、
-`mlp.onnx` 是数字分类器，不能替代它。
-
-宿主机安装了 TensorRT，不等于容器内已有开发包。当前默认 `ubuntu:22.04` 镜像
-用于 CPU 验证。本次未确认匹配的 GPU 开发镜像；实际标签以
-[NVIDIA NGC](https://catalog.ngc.nvidia.com/orgs/nvidia/containers/l4t-jetpack/tags)
-为准，不假定存在与 L4T 同名的镜像标签。
-
-### 12.1 换用已验证的 GPU 开发镜像
-
-先在 A 停止主 launch，退出 A、B 的容器 shell。在宿主机仓库目录执行：
-
-```bash
-read -r -p "输入已经确认匹配的GPU开发镜像地址: " JETSON_BASE_IMAGE
-export JETSON_BASE_IMAGE
-printf '本次基础镜像: %s\n' "$JETSON_BASE_IMAGE"
-```
-
-确认打印的是你实际验证过的地址，而不是空值或占位文字，再执行：
-
-```bash
-docker compose -f docker-compose.yaml -f docker-compose.jetson.yaml up -d --build
-docker exec -it rv_devel_ bash
-```
-
-这会重建开发镜像并重建容器。仓库挂载内容保留，但容器里临时安装的软件可能
-需要重新安装。后续重建应保持相同基础镜像设置；该环境变量只在当前宿主机 shell
-及其子进程生效。
-
-在新容器 A 中确认环境：
-
-```bash
-cd /ros_ws
-nvcc --version
-dpkg-query --show 'libnvinfer*' 'libnvonnxparsers*'
-python3 -c 'import tensorrt as trt; print(trt.__version__)'
-```
-
-分别验证 CUDA 编译工具、TensorRT 开发包和 Python 绑定。适配目标为 TensorRT
-10.3。若缺包，不继续开启 TensorRT 编译；先补齐同一套环境。
-
-### 12.2 编译 GPU 后端并生成 engine
-
-```bash
-cd /ros_ws
-ENABLE_TENSORRT=ON bash scripts/jetson/build.sh
-```
-
-这条打开 TensorRT 编译开关，必须真正链接 CUDA 和 TensorRT 库。通过后，再输入
-容器内真实存在的 ONNX 路径：
-
-```bash
-read -r -p "输入容器内0526对应ONNX的绝对路径: " QYG_ONNX_PATH
-ls -lh "$QYG_ONNX_PATH"
-python3 scripts/jetson/build_armor_engine.py "$QYG_ONNX_PATH" --fp16
-```
-
-ONNX 可以放到挂载仓库的 `record-test/` 下，宿主机文件随后能以 `/ros_ws/...`
-路径在容器内访问。脚本检查模型并在目标小电脑生成默认文件：
-
-```text
-/ros_ws/src/rm_auto_aim/armor_detector/model/0526.engine
-```
-
-`--fp16` 允许内部 FP16 计算，I/O 仍为 FP32。需要先建立 FP32 基准时省略该选项。
-更换 TensorRT、CUDA 或设备环境后重新生成 engine，不复制大电脑的 engine。
-
-### 12.3 执行 CPU/GPU 对比
-
-主程序保持停止，在容器 A 中执行：
-
-```bash
-source /opt/ros/humble/setup.bash
-source /ros_ws/install/setup.bash
-CMAKE_BUILD_PARALLEL_LEVEL=2 colcon build \
-  --symlink-install --packages-select armor_detector --parallel-workers 1 \
-  --cmake-args -DBUILD_TESTING=ON -DENABLE_TENSORRT=ON
-source /ros_ws/install/setup.bash
-ARMOR_TENSORRT_ENGINE=/ros_ws/src/rm_auto_aim/armor_detector/model/0526.engine \
-  colcon test --packages-select armor_detector \
-  --ctest-args -R '^test_(detector|yolo_backends)$' --output-on-failure
-colcon test-result --verbose
-```
-
-`ARMOR_TENSORRT_ENGINE` 把实际 engine 路径传给测试进程。直接看新增测试明细时：
-
-```bash
-ARMOR_TENSORRT_ENGINE=/ros_ws/src/rm_auto_aim/armor_detector/model/0526.engine \
-  build/armor_detector/test_yolo_backends
-```
-
-**通过条件：** `TensorRtMatchesCpuOnReferenceImage` 实际执行并为 `OK`，不是
-`SKIPPED`。它检查同一参考图片上的数量、类别、类型、置信度和角点基本一致性，
-不替代多距离、多姿态和运动目标测试。失败时先检查模型来源、预处理、输出布局
-及 FP16 误差。
-
-### 12.4 切换运行后端，再重复视频与硬件测试
-
-在容器 A 修改参数：
-
-```bash
-python3 - <<'PY'
-from pathlib import Path
-import yaml
-path = Path('/ros_ws/src/rm_bringup/config/jetson/armor_detector_params.yaml')
-config = yaml.safe_load(path.read_text())
-config['/**']['ros__parameters'].update({
-    'yolo.backend': 'tensorrt',
-    'yolo.model': 'package://armor_detector/model/0526.engine',
-})
-path.write_text(yaml.safe_dump(config, allow_unicode=True, sort_keys=False))
-print('已选择 TensorRT；需要重启主 launch')
-PY
-```
-
-`device: CPU` 和 `yolo.weights` 此时只属于 OpenVINO 配置，不控制 TensorRT。
-在容器 A 安装更新后的配置并启动：
-
-```bash
-source /opt/ros/humble/setup.bash
-source /ros_ws/install/setup.bash
-colcon build --symlink-install --packages-select rm_bringup --parallel-workers 1 \
-  --cmake-args -DBUILD_TESTING=OFF
-source /ros_ws/install/setup.bash
-export RM_VISION_PROFILE=jetson
-export ROS_DOMAIN_ID=0
-ros2 launch rm_bringup bringup_SingleProcess.launch.py
-```
-
-日志应包含 `YOLO backend: tensorrt`。终端 B 从宿主机进入同一容器，查询参数：
-
-```bash
-docker exec -it rv_devel_ bash
-source /opt/ros/humble/setup.bash
-source /ros_ws/install/setup.bash
-export ROS_DOMAIN_ID=0
-ros2 param get /armor_detector yolo.backend
-```
-
-预期为 `tensorrt`；主 launch 必须保持运行。
-
-分别重复视频测试、真实相机测试和真实串口测试。比较 CPU/GPU 时保持输入、
-分辨率、采集帧率、曝光等条件一致，同时记录结果一致性、处理频率、延迟和
-资源占用。输入被 30Hz 限制时，不能据此断言 GPU 的最大处理能力只有 30FPS。
-
-需要退回 CPU 时，把后端恢复为 `openvino`，模型恢复为
-`package://armor_detector/model/IR/0526.xml`，然后重启。
+CPU 路线仍可用于结果对照与排障。TensorRT 模式需要独立 engine，不能把
+OpenVINO 的 `device` 从 CPU 改成 GPU 来调用 NVIDIA GPU。
 
 ## 13. 停止、再次启动和日常更新
 
