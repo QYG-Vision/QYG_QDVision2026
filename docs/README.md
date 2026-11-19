@@ -1,18 +1,20 @@
 # QD_Vision2026
 
-GPU 部署、模型转换和验收请按 [TensorRT/CUDA 手册](jetson_gpu.md)；最新结果见
-[GPU 改动与性能记录](jetson_changes.md#10-tensorrtcuda-适配与性能验收)。
-
-
 奇点战队2026赛季视觉项目仓库，该项目基于中南大学FYT战队24赛季开源
 
 当前 `infantry-jetson-Lonesome-George` 工作区采用收发均为 24 字节单帧的 float32 弧度协议，电控固件须同步升级。字节布局和迁移说明见 [电控对接文档](infantry-jeson串口协议_电控对接.md)。
 
-Jetson 适配文档：[具体改动与验证范围](jetson_changes.md)、[测试与 Orin Nano 部署手册](jetson.md)。
+## Jetson 文档入口
 
-2026-11-19 本机进度：Orin Nano ARM64 Docker 构建与 14 个包编译完成，CPU 测试和
-视频、虚拟电控到云台指令输出的六项检查通过；真实相机与电控闭环仍待验证，
-GPU 状态见上方记录。Jetson 操作优先使用上述部署手册，本文其余安装说明保留通用开发环境背景。
+| 要做什么 | 文档 |
+| --- | --- |
+| 了解本机版本、路径、默认配置和未保存项 | [当前环境总览 - Lonesome George](Jetson当前环境总览-Lonesome-George.md) |
+| 创建容器、生成模型、编译与软件测试 | [部署与软件验收 - Lonesome George](Jetson部署与软件验收-Lonesome-George.md) |
+| 查代码改动、测试数据和验证边界 | [改动与验证记录 - Lonesome George](Jetson改动与验证记录-Lonesome-George.md) |
+| 接相机、电控、标定与上车验收 | [自瞄上车验收流程 - Lonesome George](自瞄上车验收流程-Lonesome-George.md) |
+| 根据故障现象定位问题 | [自瞄故障排查速查 - Lonesome George](自瞄故障排查速查-Lonesome-George.md) |
+
+2026-11-19：GPU 视频与虚拟电控链路已验证，最新相机加固相关 39 个用例通过；真实相机和电控闭环待验收。Jetson 优先按上表操作，下文保留通用开发环境说明，不要混用 CPU/GPU 构建步骤。
 
 ## 一、项目结构
 

@@ -1,0 +1,82 @@
+# Jetson 改动与验证记录 - Lonesome George
+
+更新：2026-11-19。本文只回答“改了什么、验证到哪一步”，不再重复操作命令。部署见 [软件验收手册](Jetson部署与软件验收-Lonesome-George.md)，版本与配置见 [环境总览](Jetson当前环境总览-Lonesome-George.md)。
+
+## 1. 提交范围
+
+| 阶段 | 提交 | 主要内容 |
+| --- | --- | --- |
+| 初步 ARM64 适配 | `87540e4` | 修正海康 SDK 架构、Docker 与参数加载，新增 TensorRT 10 后端接口 |
+| CPU 部署验收 | `468f9c6` | Orin 容器和 14 包构建、视频＋虚拟电控的软件链路验收 |
+| GPU 与相机加固 | `a9bac47` | GPU 部署、CUDA 预处理/Graph、断流失效、相机取帧和生命周期修复 |
+
+TensorRT 后端并非本次从零新增，GPU 性能数据主要对照 `468f9c6` 后的 CPU 基线。原长记录可从 `a9bac47` 中的 `docs/jetson_changes.md` 查看；当前文档按主题去重，不再累加已过时的“尚未验证”状态。
+
+## 2. 实际改动
+
+| 位置 | 改动及作用 |
+| --- | --- |
+| `rm_utils/hikSDK`、`cmake/hik_sdk.cmake` | 将误放的 x86 库替换为配套 AArch64 库/头文件，统一构建架构检查；SDK 来源见 [说明](../src/rm_utils/hikSDK/README.md) |
+| 根目录 Dockerfile、三个 Compose 文件 | 建立 ARM64 CPU 基础镜像和 CUDA/TensorRT GPU 镜像；保留 CPU 回退，限制编译并发，支持代理和 OpenVINO 缓存校验 |
+| `scripts/jetson/` 模型工具 | IR 转 ONNX，通过样本校验后生成 FP32/FP16 engine；记录版本、形状和哈希，不依赖重新训练 |
+| `armor_detector` 推理后端 | uint8 输入传输、CUDA RGB/HWC→归一化 NCHW、固定页内存与设备缓冲复用、单流异步提交和 CUDA Graph；捕获失败回退普通 GPU 提交 |
+| 检测、解算和日志 | 图像队列深度 1、OpenCV 线程 1；复用 PnP 数组，无结果图订阅者时跳过绘图；格式化前过滤日志，GPU 文件日志默认 INFO |
+| `armor_solver` 跟踪与定时器 | 默认 0.5 秒有效输入超时后撤销目标，重置跟踪状态与计数；输出无效指令，恢复后重新确认目标 |
+| `HikCamera` | 修正 SDK 输出容量和转换检查；失败清空旧输出，保证缓冲回收；处理 Bayer/RGB 格式、枚举/序列号失败，曝光偏移改为原子快照 |
+| 状态机和相机/检测节点 | 检查初始化结果，明确资源所属节点；停止取帧再释放 SDK 和标定服务，拒绝重复占用；修正曝光/增益参数与退出挂起、静态析构崩溃 |
+| 测试与诊断工具 | 补充 CUDA、后端、模拟 SDK、节点生命周期、跟踪重置回归，以及只读链路、性能和视频断流恢复检查 |
+
+表中包路径分别位于 `src/rm_utils`、`src/rm_auto_aim`、`src/rm_hardware_driver`。模型权重、YOLO 解析、PnP 求解与滤波/弹道核心公式未重写；PnP、跟踪、弹道仍在 CPU，GPU 不是整条链路的所有计算。
+
+## 3. 正确性与构建结果
+
+- 此前完成 GPU 镜像和完整 **14 个包**构建，模型转换样本检查通过，FP32/FP16 后端均做过回归。
+- 最新相机加固在独立 `record-test/pre-camera-build/`、`record-test/pre-camera-install/` 中重新构建 `rm_utils`、`hik_camera`、`armor_detector`，三个包通过。
+- 最新运行 **9 个测试程序、39 个 gtest 用例**，无失败、错误或跳过；包括模拟 SDK、节点生命周期、CUDA、后端视频抽帧、弹道与跟踪测试。
+- 其中解算测试复用已有 `build/armor_solver` 程序并加载新 `rm_utils`，不是最新一轮重新构建了全部工作区。最新 GPU 回归使用 FP16，未重复 FP32 性能或精度测量。
+- 生命周期回归曾出现“断言全过但进程段错误退出”；修复资源释放后 CTest 正常退出，因此必须检查进程状态和 XML，不能只看断言。
+
+相机加固的独立验证不会自动覆盖正式 `install/`；接硬件前仍要停止旧程序、更新正式构建。真实相机未接入，模拟用例不证明 USB 采集、时间戳和拔插恢复正确。
+
+## 4. 性能观察
+
+条件：本机 Orin Nano Super、30Hz 测试视频、虚拟电控，桌面/IDE 仍运行，未锁频。不同窗口和订阅负载不混作严格对照。
+
+| 测量 | 结果 |
+| --- | --- |
+| 同轮 CPU / FP16 处理结果频率 | 4.049 / 28.998Hz |
+| 同轮 CPU / FP16 图像到跟踪中位延迟 | 262.762 / 24.207ms |
+| 后续 CUDA Graph 链路 | 29.646Hz，跟踪中位延迟 22.837ms，P95 29.794ms |
+| 后端配对测试：普通 GPU / Graph 中位耗时 | 3.373 / 2.973ms；含传输、预处理、推理和同步，不含解码/缩放/解析 |
+| 独立 DEBUG 观测的 PnP 中位耗时 | 0.230ms，不等于完整解算耗时 |
+| 无大图订阅的 240 秒持续运行 | 30.278Hz，检测/跟踪时间戳无倒退；RSS 502.24→512.54MiB |
+
+CPU/FP16 同轮处理率约提高 7.16 倍；不是与原 NUC 的比较。30Hz 视频不能证明相机高帧率性能或模型吞吐上限，短时 RSS 趋势也不能排除缓慢泄漏。
+
+## 5. 断流验证
+
+修复前卸载视频组件后，1 秒宽限后的 2 秒窗口仍收到 **507 条旧目标有效指令**。修复后约 0.493 秒出现第一条无效指令，宽限后有效指令为 **0**，视频按原参数恢复后重新跟踪。
+
+时间相对于卸载服务返回计量，不是硬实时保证。超时按最后一次成功处理观测的单调时钟计算，持续 TF 失败也不会续期。失效格式为 `tracking=false`、`id="0"`、`distance=-1`、`fire_advice=false`；电控如何处理仍待硬件核对。
+
+当前独立相机节点连续取帧失败超过 5 次会触发 ROS shutdown，主程序可能整体退出；没有实现“已验证的 USB 自动重连”。程序崩溃后也无法继续发无效指令，电控必须自带失联保护。
+
+## 6. 原始证据在哪里
+
+以下均为本机被忽略产物，不随 Git 克隆；关键结论以上文为准，换机需重新验证。
+
+| 内容 | 仓库根目录下路径 |
+| --- | --- |
+| 转换、engine 与元数据 | `record-test/models/0526.conversion.json`、`0526-fp32.engine[.json]`、`0526-fp16.engine[.json]` |
+| CPU / FP16 对照 | `record-test/benchmark-20261119-144437-233012.json`、`record-test/benchmark-20261119-144529-844736.json` |
+| CUDA Graph 后端 / 链路 | `record-test/cuda-graph-backend-fp16.json`、`record-test/benchmark-20261119-154332-242151.json` |
+| 最新视频六项检查 | `record-test/pipeline-check-20261119-154510-793174.json` |
+| 断流前 / 后 | `record-test/stream-recovery-20261119-152049-670315.json`、`record-test/stream-recovery-20261119-152649-255600.json` |
+| 240 秒稳定性 | `record-test/benchmark-20261119-153245-081925.json` |
+| 最新相机构建与测试 | `record-test/pre-camera-log/`、`record-test/pre-camera-build/<包>/test_results/`；解算 XML 在 `build/armor_solver/test_results/` |
+
+## 7. 下一步
+
+按 [上车验收流程](自瞄上车验收流程-Lonesome-George.md)依次完成相机成像和 RGB、工作分辨率与内参、实际测距、图像/姿态/TF 时间对齐、USB 断流/重启、真实串口、安装外参和无发射跟随。
+
+当前 `predict2send_delay=0.11` 与旧内外参数都不能默认适用于新硬件链路。软件测试通过不代表真实测距、云台闭环、发射安全或长时间实时性已验收。
