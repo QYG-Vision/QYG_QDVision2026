@@ -20,12 +20,12 @@
 namespace qd::serial_driver::protocol {
 ProtocolSentry::ProtocolSentry(std::string_view port_name, int speed, bool enable_data_print) {
   auto uart_transporter = std::make_shared<UartTransporter>(std::string(port_name), speed);
-  packet_tool_ = std::make_shared<FixedPacketTool<24>>(uart_transporter);
+  packet_tool_ = std::make_shared<FixedPacketTool<32>>(uart_transporter);
   packet_tool_->enbaleDataPrint(enable_data_print);
 }
 
 void ProtocolSentry::send(const rm_interfaces::msg::GimbalCmd &data) {
-    FixedPacket<32> packet;
+    FixedPacket<40> packet;
     const SendPacket pkt = encodeGimbalCommand(data);
     packet.copyFrom(pkt.data());
 
@@ -64,7 +64,7 @@ void ProtocolSentry::send(const rm_interfaces::msg::ChassisCmd &data) {
 }
 
 bool ProtocolSentry::receive(rm_interfaces::msg::SerialReceiveData &data) {
-    FixedPacket<24> packet;
+    FixedPacket<32> packet;
     if (!packet_tool_->recvPacket(packet)) {
         return false;
     }

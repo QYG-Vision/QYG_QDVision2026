@@ -38,7 +38,7 @@ public:
   std::string getErrorMessage() override { return packet_tool_->getErrorMessage(); }
 
 private:
-  FixedPacketTool<24>::SharedPtr packet_tool_;
+  FixedPacketTool<32>::SharedPtr packet_tool_;
 };
 }  // namespace qd::serial_driver::protocol
 

@@ -104,9 +104,8 @@ int tiny_setup(TinySolver** solverp,
     work->gl = tinyMatrix::Zero(nx, N);
     work->yl = tinyMatrix::Zero(nu, N-1);
 
-    // 保留原始跟踪权重；预计算函数内部单独加入 ADMM rho。
-    work->Q = Q.diagonal();
-    work->R = R.diagonal();
+    work->Q = (Q + rho * tinyMatrix::Identity(nx, nx)).diagonal();
+    work->R = (R + rho * tinyMatrix::Identity(nu, nu)).diagonal();
     work->Adyn = Adyn; // State transition matrix
     work->Bdyn = Bdyn; // Input matrix
     work->fdyn = fdyn; // Affine offset vector
@@ -270,12 +269,12 @@ int tiny_precompute_and_set_cache(TinyCache *cache,
     tinyMatrix Kinf = tinyMatrix::Zero(nu, nx);
     tinyMatrix Pinf = tinyMatrix::Zero(nx, nx);
 
-    for (int i = 0; i < 10000; i++)
+    for (int i = 0; i < 1000; i++)
     {
         Kinf = (R1 + Bdyn.transpose() * Ptp1 * Bdyn).inverse() * Bdyn.transpose() * Ptp1 * Adyn;
         Pinf = Q1 + Adyn.transpose() * Ptp1 * (Adyn - Bdyn * Kinf);
         // if Kinf converges, break
-        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < 1e-12)
+        if ((Kinf - Ktp1).cwiseAbs().maxCoeff() < 1e-5)
         {
             if (verbose) {
                 std::cout << "Kinf converged after " << i + 1 << " iterations" << std::endl;

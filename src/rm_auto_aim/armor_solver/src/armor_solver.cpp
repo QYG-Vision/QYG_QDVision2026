@@ -18,8 +18,6 @@
 
 #include <algorithm>
 #include <cmath>
-#include <limits>
-#include <stdexcept>
 
 namespace qd::auto_aim {
 Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
@@ -61,37 +59,26 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
         FYT_WARN("armor_solver", "Manual compensator update failed!");
     }
 
-    // 反陀螺参数
-    activate_threshold[0] = 0.0;
-    activate_threshold[1] = node->declare_parameter("solver.top1.activate_threshold", 90.0);
-    activate_threshold[2] = node->declare_parameter("solver.top2.activate_threshold", 500.0);
-    for (auto& angle: activate_threshold)
-        angle = angle * M_PI / 180.; // 转弧度制
-    deactivate_threshold[0] = 0.0;
-    deactivate_threshold[1] = node->declare_parameter("solver.top1.deactivate_threshold", 60.0);
-    deactivate_threshold[2] = node->declare_parameter("solver.top2.deactivate_threshold", 450.0);
-    for (auto& angle: deactivate_threshold)
-        angle = angle * M_PI / 180.; // 转弧度制
-    max_out_error[0] = node->declare_parameter("solver.top0.max_out_error", 1.8);
-    max_out_error[1] = node->declare_parameter("solver.top1.max_out_error", 0.6);
-    max_out_error[2] = node->declare_parameter("solver.top2.max_out_error", 1.8);
-    max_orientation_angle[0] = node->declare_parameter("solver.top0.max_orientation_angle", 58.88);
-    max_orientation_angle[1] = node->declare_parameter("solver.top1.max_orientation_angle", 0.0);
-    max_orientation_angle[2] = node->declare_parameter("solver.top2.max_orientation_angle", 0.0);
-    for (auto& angle: max_orientation_angle)
-        angle = angle * M_PI / 180.; // 转弧度制
-
     mpc_enabled_ = node->declare_parameter("solver.mpc.enabled", true);
-    const auto mode = node->declare_parameter<std::string>("solver.mpc.mode", "direct");
-    if (mode != "direct") {
-        throw std::invalid_argument("solver.mpc.mode must be direct");
-    }
+    mpc_config_.horizon = node->declare_parameter("solver.mpc.horizon", 100);
+    mpc_config_.dt = node->declare_parameter("solver.mpc.dt", 0.01);
+    mpc_config_.position_weight = node->declare_parameter("solver.mpc.position_weight", 9e6);
+    mpc_config_.velocity_weight = node->declare_parameter("solver.mpc.velocity_weight", 0.0);
+    mpc_config_.acceleration_weight =
+        node->declare_parameter("solver.mpc.acceleration_weight", 1.0);
+    mpc_config_.max_iterations = node->declare_parameter("solver.mpc.max_iterations", 10);
+    fire_thresh_ = node->declare_parameter("solver.mpc.fire_thresh", 0.003);
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
+    mpc_config_.max_acceleration =
+        node->declare_parameter("solver.mpc.yaw.max_acceleration", 50.0);
+    yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
+    auto pitch_config = mpc_config_;
+    pitch_config.max_acceleration =
+        node->declare_parameter("solver.mpc.pitch.max_acceleration", 100.0);
+    pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
 
     node.reset();
-
-    this->top_level = 0;
 }
 
 /**
@@ -140,39 +127,25 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         gimbal_rpy_[1] = -gimbal_rpy_[1]; // 转成向上为正
     } catch (tf2::TransformException& ex) {
         FYT_ERROR("armor_solver", "{}", ex.what());
-        throw ex;
+        // 姿态只供可视化使用，不因缺少实际云台反馈阻断济瞄规划路径。
     }
 
-    // 更新旋转状态
-    update_top_level(target.v_yaw);
-    target.top_level = get_top_level();
-
-    if (target.id == "outpost") {
-        pitch_inclined_ = -15.0 * M_PI / 180.0; // 前哨战固定15度
-    } else {
-        pitch_inclined_ = 15.0 * M_PI / 180.0;
-    }
+    // 保留消息兼容字段；当前规划不再使用旧旋转分级。
+    target.top_level = 0;
 
     // 在访问模型数组之前验证所用输入，避免坏目标被送入选板器或规划器。
-    const bool armor_translation = get_top_level() == 0 && use_armor_top_;
     const auto finite_xyz = [](const auto& value) {
         return std::isfinite(value.x) && std::isfinite(value.y) && std::isfinite(value.z);
     };
     bool valid_target = target.tracking && std::isfinite(target.v_yaw)
-        && std::isfinite(target.yaw);
-    if (armor_translation) {
-        valid_target = valid_target && finite_xyz(target.position_armor)
-            && finite_xyz(target.velocity_armor);
-    } else {
-        valid_target = valid_target && finite_xyz(target.position) && finite_xyz(target.velocity)
-            && target.armors_num > 0
-            && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
-            && static_cast<size_t>(target.armors_num) <= target.dz_list.size();
-        if (valid_target) {
-            for (int i = 0; i < target.armors_num; ++i) {
-                valid_target = valid_target && std::isfinite(target.radius_list[i])
-                    && target.radius_list[i] > 0.0 && std::isfinite(target.dz_list[i]);
-            }
+        && std::isfinite(target.yaw) && finite_xyz(target.position) && finite_xyz(target.velocity)
+        && target.armors_num > 0
+        && static_cast<size_t>(target.armors_num) <= target.radius_list.size()
+        && static_cast<size_t>(target.armors_num) <= target.dz_list.size();
+    if (valid_target) {
+        for (int i = 0; i < target.armors_num; ++i) {
+            valid_target = valid_target && std::isfinite(target.radius_list[i])
+                && target.radius_list[i] > 0.0 && std::isfinite(target.dz_list[i]);
         }
     }
     if (!valid_target) {
@@ -184,42 +157,13 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         return invalid;
     }
 
-    // 根据top_level选择决策
-    RosTarget target_msg(target);
-    ShootState target_aim;
-    if (get_top_level() > 0) {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    } else if (use_armor_top_) {
-        target_aim = get_aim_positon(target_msg, gimbal_rpy_);
-    } else {
-        target_aim = get_aim(target_msg, gimbal_rpy_);
-    }
-    ballistic_debug_ = target_aim.ballistic_debug;
-
-    // Initialize gimbal_cmd
+    // 对齐济瞄 Planner：不进入旧追板、等板与火控链。
     rm_interfaces::msg::GimbalCmd gimbal_cmd;
-    gimbal_cmd.reference_valid = false; // 直发参考通过检查后才置有效
     gimbal_cmd.header = target.header;
     gimbal_cmd.id = target.id;
-    auto send_ypd = target_aim.aim_ypd;
-    auto send_ypd_v = target_aim.aim_ypd_v;
-    // 保存原始瞄准角供失败时诊断；有效发送角由 MPC 覆盖，不再额外叠加速度预测。
-    gimbal_cmd.yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_diff = reduced_angle(send_ypd.yaw - gimbal_rpy_[2]) * 180 / M_PI;
-    gimbal_cmd.pitch_diff = -reduced_angle(send_ypd.pitch - gimbal_rpy_[1]) * 180 / M_PI;
-    gimbal_cmd.distance = send_ypd.distance;
-    gimbal_cmd.fire_advice = get_bullet_speed() > 0.0
-                             && target_aim.shoot == ShootMode::SHOOT_NOW;
-    // 以下信息主要用于调试和可视化
     gimbal_cmd.bullet_speed = get_bullet_speed();
-    gimbal_cmd.exp_yaw = send_ypd.yaw * 180 / M_PI;
-    gimbal_cmd.exp_pitch = -send_ypd.pitch * 180 / M_PI;
-    gimbal_cmd.yaw_vel = send_ypd_v.yaw * 180 / M_PI;
-    gimbal_cmd.pitch_vel = -send_ypd_v.pitch * 180 / M_PI;
     gimbal_cmd.target_v_yaw = target.v_yaw;
-
-    if (!plan_mpc(target_aim, target, current_time, gimbal_cmd)) {
+    if (!plan_mpc(target, current_time, gimbal_cmd)) {
         gimbal_cmd.reference_valid = false;
         gimbal_cmd.fire_advice = false;
     }
@@ -248,37 +192,6 @@ std::vector<std::pair<double, double>> Solver::getTrajectory() const noexcept {
         p.second = -x * sin(gimbal_rpy_[1]) + y * cos(gimbal_rpy_[1]);
     }
     return trajectory;
-}
-
-/**
-  @brief 更新目标旋转状态
-  @param angular_velocity [IN] 角速度
-*/
-void Solver::update_top_level(const double angular_velocity) {
-    const double credible_abs_w = std::abs(angular_velocity);
-    // 最大 top 等级是 2 写死了
-    // 是这样的
-    // 0 级：基本上直接跟随就行
-    // 1 级：引入 indirect
-    // 2 级：转得太快跟不上，改成往中间打
-    const double next_level_activate_w =
-        this->top_level == 2 ? DBL_MAX : activate_threshold[this->top_level + 1];
-    const double deactivate_w =
-        this->top_level == 0 ? DBL_MIN : deactivate_threshold[this->top_level];
-
-    if (credible_abs_w >= next_level_activate_w) {
-        this->top_level += 1;
-    } else if (credible_abs_w < deactivate_w) {
-        this->top_level -= 1;
-    }
-}
-
-/**
-  @brief 得到当前旋转状态
-  @return 返回一个 int 类型数据，0 没有旋转，1 在旋转，2 在高速旋转
-*/
-int Solver::get_top_level() const {
-    return this->top_level;
 }
 
 /**
@@ -374,109 +287,6 @@ std::vector<State> Solver::get_armors_state(const RosTarget& target_msg) {
 }
 
 /**
-  @brief 根据目标状态获得瞄准信息，考虑旋转
-*/
-ShootState Solver::get_aim(const RosTarget& target_msg, const Eigen::Vector3d& gimbal_rpy) {
-    // 预测dt后装甲板state
-    auto filters = get_armors_state(target_msg);
-    std::vector<State> hit_state_vec {};
-    const double base_delay = prediction_delay_ + predict2send_delay_;
-    for (const auto& filter: filters) {
-        hit_state_vec.emplace_back(solve_impact_state(filter, base_delay));
-    }
-
-    // 计算弹道
-    const bool allow_indirect = this->top_level > 0; // 是否允许切板，平移非陀螺为 false
-    auto target_aim = state_vec_to_aim(
-        hit_state_vec,
-        max_orientation_angle[this->top_level],
-        max_out_error[this->top_level],
-        allow_indirect,
-        gimbal_rpy
-    );
-
-    // 这里比上面的多加了个开火延迟，其他没区别
-    std::vector<State> command_hit_state_vec {};
-    const double command_delay = base_delay + controller_delay_;
-    for (const auto& filter: filters) {
-        command_hit_state_vec.emplace_back(solve_impact_state(filter, command_delay));
-    }
-    auto command_target_aim = state_vec_to_aim(
-        command_hit_state_vec,
-        max_orientation_angle[this->top_level],
-        max_out_error[this->top_level],
-        true,
-        gimbal_rpy
-    );
-
-    if (target_aim.aim_ypd.distance > 0.0 && !hit_state_vec.empty()) {
-        size_t selected = 0;
-        double error = std::numeric_limits<double>::infinity();
-        for (size_t i = 0; i < hit_state_vec.size(); ++i) {
-            const double candidate = (hit_state_vec[i] - target_aim.state).squaredNorm();
-            if (candidate < error) {
-                error = candidate;
-                selected = i;
-            }
-        }
-        target_aim.planning_state = filters[selected];
-        target_aim.planning_state_valid = true;
-    }
-
-    // 火控
-    target_aim.shoot = isSuggestFire(
-        target_aim.aim_ypd,
-        command_target_aim.aim_ypd,
-        gimbal_rpy,
-        max_out_error[this->top_level],
-        reduced_angle(target_aim.state(6) - gimbal_rpy[2]),
-        pitch_inclined_ // 角度不知道有没有反
-    );
-
-    return target_aim;
-}
-
-/**
- * @brief 根据目标状态获得瞄准信息，直接使用正在跟踪的那块
- * 
- * @param target_msg 
- * @param gimbal_rpy 
- * @return ShootState 
- */
-ShootState Solver::get_aim_positon(const RosTarget& target_msg, const Eigen::Vector3d& gimbal_rpy) {
-    // 预测dt后装甲板state
-    Eigen::Vector3d p = target_msg.armor_position_;
-    auto p_v = target_msg.armor_velocity_;
-    const State armor_state { p.x(), p_v.x(), p.y(), p_v.y(), p.z(), p_v.z(), 0, 0, 0 };
-    const State pre_state =
-        solve_impact_state(armor_state, prediction_delay_ + predict2send_delay_);
-
-    //弹道解算和火控
-    const Eigen::Vector3d target_pos { pre_state(0), pre_state(2), pre_state(4) };
-    const auto aim_result = target_pos_to_aim_ypd(target_pos);
-    const auto& aim_ypd = aim_result.aim_ypd;
-
-    auto isFire = isSuggestFire(
-        aim_ypd,
-        aim_ypd,
-        gimbal_rpy,
-        this->max_out_error[this->top_level],
-        0.0,
-        pitch_inclined_
-    );
-
-    auto target_aim = YpdCoord_to_ShootState(aim_ypd, isFire);
-    target_aim.state = pre_state;
-    target_aim.planning_state = armor_state;
-    target_aim.planning_state_valid = true;
-    target_aim.aim_ypd = aim_ypd;
-    target_aim.aim_ypd_v = get_gimbal_ypd_v(p, p_v, gimbal_rpy);
-    target_aim.ballistic_debug = aim_result.ballistic_debug;
-
-    return target_aim;
-}
-
-/**
   @brief 弹道求解，在于计算 pitch
 */
 ShootParam Solver::target_pos_to_shoot_param(const Eigen::Vector3d& target_pos) {
@@ -539,29 +349,6 @@ State Solver::state_predict(const State& state, double dt) {
 }
 
 /**
-  @brief 获得一定角度内的装甲板
-*/
-std::vector<State> Solver::state_vec_to_direct_state_vec(
-    const std::vector<State>& state_vec,
-    const double& max_orientation_angle,
-    const Eigen::Vector3d& gimbal_rpy
-) {
-    std::vector<State> direct_vec;
-    for (const auto& state: state_vec) {
-        double current_max_orientation_angle = max_orientation_angle;
-        // 若当前装甲板与上一帧锁定装甲板足够接近，则放宽直接击打角度阈值，减少切板抖动
-        if (std::abs(reduced_angle(state(6) - last_aim_yaw_)) < M_PI / 4.0) {
-            current_max_orientation_angle += 15.0 * M_PI / 180.0;
-        }
-        // 如果装甲板相对于相机的角度在允许范围内
-        if (std::abs(reduced_angle(state(6) - gimbal_rpy[2])) <= current_max_orientation_angle) {
-            direct_vec.push_back(state);
-        }
-    }
-    return direct_vec;
-}
-
-/**
   @brief 获得装甲板的xyz
 */
 Eigen::Vector3d Solver::state_to_armor_pos(const State& state) {
@@ -589,50 +376,13 @@ YpdCoord Solver::aim_xyz_to_aim_ypd(const Eigen::Vector3d& xyz) {
     YpdCoord aim_ypd = xyz_to_ypd(xyz);
 
     auto angle_offset = manual_compensator_->angleHardCorrect(xyz.head(2).norm(), xyz.z());
-    double pitch_offset = angle_offset[0] * M_PI / 180;
-    double yaw_offset = angle_offset[1] * M_PI / 180;
+    double pitch_offset = angle_offset[0];
+    double yaw_offset = angle_offset[1];
 
     // NEED DEBUG
     return { reduced_angle(aim_ypd.yaw + yaw_offset),
              aim_ypd.pitch + pitch_offset,
              aim_ypd.distance };
-}
-
-/**
-  @brief 获得目标yaw pitch 与当前云台的差值代价cost
-*/
-double Solver::aim_swing_cost(const YpdCoord& aim_ypd, const Eigen::Vector3d& gimbal_rpy) {
-    // NEED DEBUG
-    return Eigen::Vector2d(
-               reduced_angle(aim_ypd.yaw - gimbal_rpy[2]),
-               aim_ypd.pitch - gimbal_rpy[1]
-    )
-        .norm();
-}
-
-/**
-  @brief 得到最小代价击打的装甲板的ypd，最终击打位置
-*/
-std::pair<AimResult, State> Solver::choose_direct_aim(
-    const std::vector<State>& direct_state_vec,
-    const Eigen::Vector3d& gimbal_rpy
-) {
-    // 获得最小摆动代价的装甲板
-    State chosen_state = direct_state_vec[0];
-    AimResult chosen_aim_result;
-    double min_swing_cost = DBL_MAX;
-    for (const auto& direct: direct_state_vec) {
-        const Eigen::Vector3d target_pos = state_to_armor_pos(direct);
-        const auto aim_result = target_pos_to_aim_ypd(target_pos);
-        const double swing_cost = aim_swing_cost(aim_result.aim_ypd, gimbal_rpy);
-        if (swing_cost < min_swing_cost) {
-            chosen_state = direct;
-            min_swing_cost = swing_cost;
-            chosen_aim_result = aim_result;
-        }
-    }
-
-    return { chosen_aim_result, chosen_state };
 }
 
 /**
@@ -651,270 +401,6 @@ AimResult Solver::target_pos_to_aim_ypd(const Eigen::Vector3d& xyz) {
             shoot_param.ballistic_success
         }
     };
-}
-
-/**
-  @brief 角速度较大时调用，到指定位置等待
-*/
-std::pair<AimResult, State> Solver::choose_indirect_aim(
-    const std::vector<State>& indirect_state_vec,
-    const Eigen::Vector3d& gimbal_rpy,
-    double max_orientation_angle_,
-    double max_out_error_
-) {
-    // 角速度 v-yaw
-    const double w = indirect_state_vec[0][7];
-    // 等待装甲板的角度yaw，向哪个方向等待
-    const double zn_to_wait = w > 0.0 ? -max_orientation_angle_ : +max_orientation_angle_;
-    // 目标装甲板进入 max_orientation_angle 范围所需角度
-    double min_score = DBL_MAX;
-    double actual_min_wait = DBL_MAX;
-    State indirect_aim_state = indirect_state_vec[0];
-
-    // 找到等待击打的装甲板
-    for (const auto& state: indirect_state_vec) {
-        const double max_out_angle =
-            this->shooting_range_w_ / 2.0 * max_out_error_ / state[8]; // 近似角度误差
-        const double zn_to_armor =
-            reduced_angle(state(6) - gimbal_rpy[2]); // 装甲板当前yaw,相对于相机
-        // 值域 (-max_out_angle, M_PI - max_out_angle)
-        const double armor_to_wait =
-            reduced_angle(
-                (w > 0.0 ? zn_to_wait - zn_to_armor : zn_to_armor - zn_to_wait) - M_PI
-                + max_out_angle
-            )
-            + M_PI - max_out_angle;
-        double score = armor_to_wait;
-        // 对上一帧已锁定附近的装甲板给予粘滞优待，降低临界切板频率
-        if (std::abs(reduced_angle(state(6) - last_aim_yaw_)) < M_PI / 4.0) {
-            score -= 0.5;
-        }
-        if (score < min_score) {
-            min_score = score;
-            actual_min_wait = armor_to_wait;
-            indirect_aim_state = state;
-        }
-    }
-
-    // 装甲板进入 max_orientation_angle 所需时间 dt
-    const double time_to_emerge = actual_min_wait / std::abs(w);
-    auto aim_state = state_predict(indirect_aim_state, time_to_emerge);
-    const Eigen::Vector3d target_pos = state_to_armor_pos(aim_state);
-    auto aim_result = target_pos_to_aim_ypd(target_pos);
-    aim_result.wait_duration = time_to_emerge;
-
-    return { aim_result, indirect_aim_state };
-}
-
-/**
-  @brief 数据类型转化
-*/
-ShootState Solver::YpdCoord_to_ShootState(const YpdCoord& ypd, const ShootMode& shoot) {
-    return ShootState { ypd.yaw, ypd.pitch, ypd.distance, shoot };
-}
-YpdCoord Solver::ShootState_to_YpdCoord(const ShootState& shoot_state) {
-    return YpdCoord { shoot_state.yaw, shoot_state.pitch, shoot_state.distance };
-}
-
-/**
-  @brief 获得最终击打信息
-  @param state_vec [IN] 预测后的装甲板状态
-  @param max_orientation_angle [IN] 允许直接击打的最大装甲板yaw角度
-  @param max_out_error [IN] 允许的最大误差率
-  @param allow_indirect [IN] 是否允许间接击打
-    @param gimbal_rpy [IN] 当前云台姿态
-  @return 最终击打信息
-*/
-ShootState Solver::state_vec_to_aim(
-    const std::vector<State>& state_vec,
-    const double& max_orientation_angle,
-    const double& max_out_error,
-    const bool& allow_indirect,
-    const Eigen::Vector3d& gimbal_rpy
-) {
-    const std::vector<State> direct_vec =
-        state_vec_to_direct_state_vec(state_vec, max_orientation_angle, gimbal_rpy);
-    std::pair<AimResult, State> target_aim_result_and_state;
-    if (direct_vec.empty()) {
-        if (!allow_indirect) {
-            //debug
-            FYT_DEBUG("armor_solver", "no direct armor, no indirect allowed, idle");
-            return ShootState { 0.0, 0.0, -1.0, ShootMode::IDLE, State {} };
-        }
-
-        target_aim_result_and_state =
-            choose_indirect_aim(state_vec, gimbal_rpy, max_orientation_angle, max_out_error);
-    } else {
-        target_aim_result_and_state = choose_direct_aim(direct_vec, gimbal_rpy);
-    }
-
-    // 赋值
-    auto target_aim = ShootState {};
-    target_aim.shoot = ShootMode::TRACKING;
-    target_aim.state = target_aim_result_and_state.second;
-    target_aim.aim_ypd = target_aim_result_and_state.first.aim_ypd;
-    target_aim.ballistic_debug = target_aim_result_and_state.first.ballistic_debug;
-    target_aim.wait_duration = target_aim_result_and_state.first.wait_duration;
-    auto target_pos = state_to_armor_pos(target_aim_result_and_state.second);
-    auto armor_v = state_to_armor_v(target_aim_result_and_state.second);
-    target_aim.aim_ypd_v = get_gimbal_ypd_v(target_pos, armor_v, gimbal_rpy); // 计算ypd_v
-    // 记录本帧最终锁定的装甲板世界 yaw，供下一帧切板滞回使用
-    last_aim_yaw_ = target_aim.state(6);
-    return target_aim;
-}
-
-/**
-    @brief 判断是否超过允许误差率
-    @return 在误差以内返回 true，否则返回 false
-*/
-bool Solver::aim_error_exceeded(
-    const YpdCoord& ypd,
-    const Eigen::Vector3d& gimbal_rpy,
-    const double& error_rate,
-    const double& yaw_inclined,
-    const double& pitch_inclined
-) {
-    double yaw_diff = std::abs(reduced_angle(ypd.yaw - gimbal_rpy[2]));
-    double pitch_diff = std::abs(ypd.pitch - gimbal_rpy[1]);
-
-    // 当前距离目标的diff 比 允许开火diff
-    if (get_termination_dis(ypd.distance, yaw_diff)
-        > shooting_range_w_ / 2. * std::cos(yaw_inclined) * error_rate)
-    {
-        return false;
-    }
-    if (get_termination_dis(ypd.distance, pitch_diff)
-        > shooting_range_h_ / 2. * std::cos(pitch_inclined) * error_rate)
-    {
-        // 对方朝上 15 度，我朝下 15 度，这是刚好对准的
-        return false;
-    }
-
-    return true;
-}
-
-/**
-    @brief 判断是否超过允许误差率
-    @return 在误差以内返回 true，否则返回 false
-*/
-bool Solver::aim_error_exceeded(
-    const YpdCoord& real_ypd,
-    const YpdCoord& ideal_ypd,
-    const Eigen::Vector3d& gimbal_rpy,
-    const double& error_rate,
-    const double& yaw_inclined,
-    const double& pitch_inclined
-) {
-    double yaw_diff = std::abs(reduced_angle(real_ypd.yaw - ideal_ypd.yaw));
-    double pitch_diff = std::abs(real_ypd.pitch - ideal_ypd.pitch);
-
-    // 当前距离目标的diff 比 允许开火diff
-    if (get_termination_dis(real_ypd.distance, yaw_diff)
-        > shooting_range_w_ / 2. * std::cos(yaw_inclined) * error_rate)
-    {
-        return false;
-    }
-    if (get_termination_dis(real_ypd.distance, pitch_diff)
-        > shooting_range_h_ / 2. * std::cos(pitch_inclined) * error_rate)
-    {
-        // 对方朝上 15 度，我朝下 15 度，这是刚好对准的
-        return false;
-    }
-
-    return true;
-}
-
-/**
- * @brief 计算是否建议开火
- * 
- * @param real_ypd 实际要瞄准的位置
- * @param ideal_ypd 加上开火延迟后实际打到的地方
- * @param gimbal_rpy 当前云台姿态
- * @param error_rate 开火误差
- * @param yaw_inclined 装甲板相对于云台yaw
- * @param pitch_inclined 装甲板pitch
- * @return ShootMode 开火建议
- */
-ShootMode Solver::isSuggestFire(
-    const YpdCoord& real_ypd,
-    const YpdCoord& ideal_ypd,
-    const Eigen::Vector3d& gimbal_rpy,
-    const double& error_rate,
-    const double& yaw_inclined,
-    const double& pitch_inclined
-) {
-    if (aim_error_exceeded(real_ypd, gimbal_rpy, error_rate, yaw_inclined, pitch_inclined)
-        && aim_error_exceeded(
-            real_ypd,
-            ideal_ypd,
-            gimbal_rpy,
-            error_rate,
-            yaw_inclined,
-            pitch_inclined
-        ))
-    {
-        return ShootMode::SHOOT_NOW;
-    } else {
-        return ShootMode::TRACKING;
-    }
-}
-
-bool Solver::aim_cmp(const ShootState& aim_a, const ShootState& aim_b) {
-    if ((aim_a.shoot == ShootMode::IDLE) != (aim_b.shoot == ShootMode::IDLE)) {
-        return static_cast<int>(aim_a.shoot == ShootMode::IDLE)
-            < static_cast<int>(aim_b.shoot == ShootMode::IDLE); // false 优先
-    }
-    return this->aim_swing_cost(ShootState_to_YpdCoord(aim_a), this->gimbal_rpy_)
-        < this->aim_swing_cost(ShootState_to_YpdCoord(aim_b), this->gimbal_rpy_);
-}
-
-// 这个用来计算 ypd_v 的
-Eigen::Vector3d Solver::state_to_armor_v(const State& state) {
-    const Eigen::Vector3d center_v = { state[1], state[3], state[5] };
-    const Eigen::Vector2d radius_norm = rotate({ 1.0, 0.0 }, state[6]);
-    const Eigen::Vector2d theta_norm = rotate(radius_norm, M_PI / 2.0);
-    const Eigen::Vector2d theta_v = state[7] * theta_norm * state[8];
-    return { center_v[0] - theta_v[0], center_v[1] - theta_v[1], center_v[2] };
-}
-
-/**
- * @brief 将 ROS 坐标系下的速度向量转换为球坐标系/YPD坐标系下的变化率
- *  输入的是基于云台坐标系的位置、速度，由于 odom 和 gimbal 重合，这里直接用 odom 系下的了
- * @param xyz_i 装甲板xyz
- * @param xyz_v_i 装甲板xyz_v
- * @param gimbal_rpy 云台姿态
- * @return YpdCoord 
- */
-YpdCoord Solver::get_gimbal_ypd_v(
-    const Eigen::Vector3d& xyz_i,
-    const Eigen::Vector3d& xyz_v_i,
-    const Eigen::Vector3d& gimbal_rpy
-) {
-    // 初始化 1维 Jet。实部为坐标值，导数部（.v[0]）为速度值
-    // 相当于定义了变量随时间的一阶泰勒展开： x(t) = x + vx * dt
-    ceres::Jet<double, 1> x(xyz_i.x());
-    x.v[0] = xyz_v_i.x();
-    ceres::Jet<double, 1> y(xyz_i.y());
-    y.v[0] = xyz_v_i.y();
-    ceres::Jet<double, 1> z(xyz_i.z());
-    z.v[0] = xyz_v_i.z();
-
-    YpdCoord ypd_v;
-
-    // --- Yaw 的自动求导 ---
-    ceres::Jet<double, 1> yaw = ceres::atan2(y, x);
-    ypd_v.yaw = yaw.v[0];
-
-    // --- Pitch 的自动求导 ---
-    ceres::Jet<double, 1> xy_norm = ceres::sqrt(x * x + y * y);
-    ceres::Jet<double, 1> pitch = ceres::atan2(z, xy_norm);
-    ypd_v.pitch = pitch.v[0];
-
-    // --- Distance 的自动求导 ---
-    ceres::Jet<double, 1> dist = ceres::sqrt(x * x + y * y + z * z);
-    ypd_v.distance = dist.v[0]; // 直接提取导数部分
-
-    return ypd_v;
 }
 
 } // namespace qd::auto_aim

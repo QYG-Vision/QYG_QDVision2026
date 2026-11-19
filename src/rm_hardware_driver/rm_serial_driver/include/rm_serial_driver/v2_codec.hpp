@@ -9,17 +9,28 @@
 #include <limits>
 
 namespace qd::serial_driver::v2 {
-using CommandFrame = std::array<uint8_t, 32>;
-using FeedbackFrame = std::array<uint8_t, 24>;
+using CommandFrame = std::array<uint8_t, 40>;
+using FeedbackFrame = std::array<uint8_t, 32>;
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 
-/** @brief 按大端写入整数的低 size 字节。 */
+/**
+ * @brief 按大端写入整数的低 size 字节。
+ * @param out 至少 size 字节的输出缓冲区。
+ * @param value 待编码的无符号值。
+ * @param size 字节数，范围 1～4。
+ */
 inline void put(uint8_t* out, uint32_t value, unsigned size) {
     for (unsigned i = 0; i < size; ++i) {
         out[size - 1 - i] = static_cast<uint8_t>(value >> (8 * i));
     }
 }
-/** @brief 读取大端无符号整数。 */
+
+/**
+ * @brief 读取大端无符号整数。
+ * @param in 至少 size 字节的输入缓冲区。
+ * @param size 字节数，范围 1～4。
+ * @return 解码后的无符号整数。
+ */
 inline uint32_t get(const uint8_t* in, unsigned size) {
     uint32_t value = 0;
     for (unsigned i = 0; i < size; ++i) {
@@ -27,98 +38,92 @@ inline uint32_t get(const uint8_t* in, unsigned size) {
     }
     return value;
 }
-/** @brief 写入 IEEE 754 binary32 的大端位模式。 */
+
+/**
+ * @brief 写入 IEEE 754 binary32 的大端位模式，不进行定点缩放。
+ * @param out 至少 4 字节的输出缓冲区。
+ * @param value 已使用约定物理单位的单精度数值。
+ */
 inline void putFloat(uint8_t* out, float value) {
-    uint32_t bits;
+    uint32_t bits = 0;
     std::memcpy(&bits, &value, sizeof(bits));
     put(out, bits, 4);
 }
-/** @brief 读取 IEEE 754 binary32 的大端位模式。 */
+
+/**
+ * @brief 读取 IEEE 754 binary32 的大端位模式。
+ * @param in 至少 4 字节的输入缓冲区。
+ * @return 解码后的直接物理值，可能为 NaN 或 Inf，由调用方校验。
+ */
 inline float getFloat(const uint8_t* in) {
     const uint32_t bits = get(in, 4);
-    float value;
+    float value = 0.0f;
     std::memcpy(&value, &bits, sizeof(value));
     return value;
 }
-/** @brief 定点值先限幅再截断，非有限值归零。 */
-inline uint16_t fixed(double value) {
-    if (!std::isfinite(value)) {
-        return 0;
-    }
-    const auto scaled = std::clamp(value * 100.0, -32768.0, 32767.0);
-    return static_cast<uint16_t>(static_cast<int16_t>(scaled));
-}
-/** @brief 读取有符号大端定点值，避免依赖主机端序。 */
-inline float readFixed(const uint8_t* in) {
-    const auto bits = get(in, 2);
-    const int32_t value = bits >= 0x8000 ? static_cast<int32_t>(bits) - 65536
-                                       : static_cast<int32_t>(bits);
-    return value / 100.0f;
-}
 
 /**
- * @brief 编码完整规划参考；没有完整参考时只编码无目标帧。
- * @param data 含绝对角度（degree）和同一时刻规划导数的消息。
+ * @brief 编码完整规划参考；没有完整参考或输入非法时编码无目标帧。
+ * @param data 同一规划时刻的绝对角（rad）、导数（rad/s、rad/s²）、距离（m）。
  * @param id 目标编号，0～9。
- * @return 大端 32 字节 V2 命令。
+ * @return 大端 40 字节命令，物理量均为直接 float32 值；无效时距离为 −1 m。
  */
 template <typename Command>
 CommandFrame encode(const Command& data, uint8_t id) {
     CommandFrame out{};
-    out[0] = 0xfe;
-    out[31] = 0x0d;
-    put(out.data() + 6, fixed(-1.0), 2);
-    const std::array<double, 4> derivatives{data.yaw_vel_deg_s, data.pitch_vel_deg_s,
-                                         data.yaw_acc_deg_s2, data.pitch_acc_deg_s2};
+    out.front() = 0xfe;
+    out.back() = 0x0d;
+    putFloat(out.data() + 10, -1.0f);
+    const std::array<double, 8> values{
+        data.yaw, data.pitch, data.distance, data.target_v_yaw,
+        data.yaw_vel_rad_s, data.pitch_vel_rad_s, data.yaw_acc_rad_s2, data.pitch_acc_rad_s2
+    };
     const bool valid = data.reference_valid && id <= 9 && data.distance > 0.0
-        && std::isfinite(data.distance) && fixed(data.distance) > 0
-        && std::isfinite(data.yaw)
-        && std::isfinite(data.pitch) && std::isfinite(data.target_v_yaw)
-        && std::all_of(derivatives.begin(), derivatives.end(), [](double value) {
+        && std::all_of(values.begin(), values.end(), [](double value) {
             return std::isfinite(value)
                 && std::abs(value) <= std::numeric_limits<float>::max();
         });
-    if (!valid) {
+    if (!valid || static_cast<float>(data.distance) <= 0.0f) {
         return out;
     }
     out[1] = data.fire_advice ? 1 : 0;
-    put(out.data() + 2, fixed(data.yaw), 2);
-    put(out.data() + 4, fixed(data.pitch), 2);
-    put(out.data() + 6, fixed(data.distance), 2);
-    out[8] = id;
-    put(out.data() + 9, fixed(data.target_v_yaw), 2);
-    out[11] = 1;
-    for (unsigned i = 0; i < derivatives.size(); ++i) {
-        putFloat(out.data() + 14 + 4 * i, static_cast<float>(derivatives[i]));
+    out[14] = id;
+    out[19] = 1;
+    constexpr std::array<unsigned, 8> OFFSETS{2, 6, 10, 15, 22, 26, 30, 34};
+    for (unsigned i = 0; i < values.size(); ++i) {
+        putFloat(out.data() + OFFSETS[i], static_cast<float>(values[i]));
     }
     return out;
 }
 
 /**
- * @brief 校验并解码 V2 反馈，失败时不修改输出消息。
- * @param frame 完整的 24 字节状态帧。
- * @param data 输出原协议正方向的角度和实际角速度，单位 degree、degree/s。
- * @return 帧头尾、模式及实际角速度均合法时为 true。
+ * @brief 校验并解码完整反馈，失败时不修改输出消息。
+ * @param frame 完整的 32 字节状态帧，预留校验位尚未启用。
+ * @param data 输出原协议正方向的姿态（rad）、角速度（rad/s）、弹速（m/s）与时间戳（ms）。
+ * @return 帧头尾、模式及全部浮点字段合法时为 true。
  */
 template <typename Feedback>
 bool decode(const FeedbackFrame& frame, Feedback& data) {
-    if (frame[0] != 0xfe || frame[23] != 0x0d || frame[1] > 5) {
+    if (frame.front() != 0xfe || frame.back() != 0x0d || frame[1] > 5) {
         return false;
     }
-    const float yaw_vel = getFloat(frame.data() + 14);
-    const float pitch_vel = getFloat(frame.data() + 18);
-    if (!std::isfinite(yaw_vel) || !std::isfinite(pitch_vel)) {
-        return false;
+    constexpr std::array<unsigned, 6> OFFSETS{2, 6, 10, 14, 22, 26};
+    std::array<float, 6> values{};
+    for (unsigned i = 0; i < values.size(); ++i) {
+        values[i] = getFloat(frame.data() + OFFSETS[i]);
+        if (!std::isfinite(values[i])) {
+            return false;
+        }
     }
     auto decoded = data;
     decoded.mode = frame[1];
-    decoded.roll = readFixed(frame.data() + 2);
-    decoded.pitch = readFixed(frame.data() + 4);
-    decoded.yaw = readFixed(frame.data() + 6);
-    decoded.bullet_speed = readFixed(frame.data() + 8);
-    decoded.mcu_timestamp = get(frame.data() + 10, 4);
-    decoded.yaw_actual_vel_deg_s = yaw_vel;
-    decoded.pitch_actual_vel_deg_s = pitch_vel;
+    decoded.roll = values[0];
+    decoded.pitch = values[1];
+    decoded.yaw = values[2];
+    decoded.bullet_speed = values[3];
+    decoded.mcu_timestamp = get(frame.data() + 18, 4);
+    decoded.yaw_actual_vel_rad_s = values[4];
+    decoded.pitch_actual_vel_rad_s = values[5];
     data = decoded;
     return true;
 }

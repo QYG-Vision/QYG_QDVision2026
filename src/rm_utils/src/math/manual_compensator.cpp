@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include "rm_utils/math/manual_compensator.hpp"
+#include <cmath>
 #include <iostream>
 
 namespace qd {
@@ -100,7 +101,10 @@ bool ManualCompensator::updateMapByStr(const std::string &str) {
 
   LineRegion d_region(nums[0], nums[1]);
   LineRegion h_region(nums[2], nums[3]);
-  if (!updateMap(d_region, h_region, nums[4], nums[5])) {
+  // 配置使用度，进入补偿表前统一转为弧度：rad = degree × π / 180。
+  const double pitch_offset_rad = nums[4] * M_PI / 180.0;
+  const double yaw_offset_rad = nums[5] * M_PI / 180.0;
+  if (!updateMap(d_region, h_region, pitch_offset_rad, yaw_offset_rad)) {
     return false;
   }
   return true;

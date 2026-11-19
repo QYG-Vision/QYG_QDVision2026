@@ -66,17 +66,6 @@ public:
 
     virtual std::string getErrorMessage() = 0;
 
-    // 字节交换辅助函数
-    inline int16_t swap_bytes(int16_t val) {
-        const auto bits = static_cast<uint16_t>(val);
-        const auto swapped = static_cast<uint16_t>((bits << 8) | (bits >> 8));
-        return static_cast<int16_t>(swapped);
-    }
-    inline uint32_t swap_bytes(uint32_t val) {
-        return ((val << 24) & 0xFF000000) | ((val << 8) & 0x00FF0000) | ((val >> 8) & 0x0000FF00)
-            | ((val >> 24) & 0x000000FF);
-    }
-
     using SendPacket = v2::CommandFrame;
     using ReceivePacket = v2::FeedbackFrame;
 
@@ -101,8 +90,8 @@ public:
 protected:
     /**
      * @brief 显式编码 V2 规划参考，完整规划未就绪时发送无目标帧。
-     * @param data 绝对角度和规划导数，同一时刻且符号一致。
-     * @return 32 字节 V2 帧。
+     * @param data 绝对角（rad）、规划导数（rad/s、rad/s²），同一时刻且符号一致。
+     * @return 40 字节 float32 弧度帧。
      */
     SendPacket encodeGimbalCommand(const rm_interfaces::msg::GimbalCmd& data) {
         auto reference = data;

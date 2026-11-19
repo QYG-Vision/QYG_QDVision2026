@@ -223,7 +223,7 @@ ArmorType TraditionalDetector::isArmor(const Light& light_1, const Light& light_
 
     // Angle of light center connection
     cv::Point2f diff = light_1.center - light_2.center;
-    float angle = std::abs(std::atan(diff.y / diff.x)) / CV_PI * 180;
+    float angle = std::abs(std::atan(diff.y / diff.x));
     bool angle_ok = angle < armor_params.max_angle;
 
     bool is_armor = light_ratio_ok && center_distance_ok && angle_ok;

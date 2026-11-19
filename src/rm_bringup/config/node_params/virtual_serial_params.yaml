@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    roll: 0.0
-    pitch: 1.34
-    yaw: 0.67
+    roll: 0.0 # rad
+    pitch: 0.023387411976724018 # rad
+    yaw: 0.011693705988362009 # rad
     vision_mode: 1
