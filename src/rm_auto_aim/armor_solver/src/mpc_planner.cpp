@@ -30,7 +30,9 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     };
     if (!mpc_enabled_) return reject("mpc_disabled");
     if (mpc_config_.horizon != 100 || mpc_config_.dt != 0.01
-        || !std::isfinite(fire_thresh_) || fire_thresh_ <= 0.0) {
+        || !std::isfinite(fire_thresh_min_) || fire_thresh_min_ < 0.0
+        || !std::isfinite(fire_thresh_max_) || fire_thresh_max_ <= 0.0
+        || fire_thresh_min_ > fire_thresh_max_) {
         return reject("invalid_mpc_config");
     }
     const double age = (now - rclcpp::Time(target.header.stamp,
@@ -119,12 +121,13 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     command.pitch_vel_rad_s = pitch_plan->velocity;
     command.yaw_acc_rad_s2 = yaw_plan->acceleration;
     command.pitch_acc_rad_s2 = pitch_plan->acceleration;
-    // 与济瞄 plan.fire 一致：中点后2拍的参考与规划误差，阈值单位 rad。
+    // 比较中点后两拍的两轴合成规划误差，允许范围包含两端，单位 rad。
     const int fire_index = half + 2;
-    command.fire_advice = std::hypot(
+    const double fire_error_rad = std::hypot(
         yaw[fire_index] - yaw_mpc_->sample_at(fire_index).position,
-        pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position)
-        < fire_thresh_;
+        pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position);
+    command.fire_advice =
+        fire_thresh_min_ <= fire_error_rad && fire_error_rad <= fire_thresh_max_;
     // 实际反馈仅用于误差诊断，不作为规划或开火门槛。
     if (feedback_) {
         command.yaw_diff = std::remainder(command.yaw - feedback_->yaw, 2.0 * M_PI);

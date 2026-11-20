@@ -13,15 +13,20 @@ protected:
         }
         FYT_REGISTER_LOGGER("armor_solver", "/tmp/qyg-mpc-test-log", INFO);
     }
-    void SetUp() override {
+    void create_solver(double fire_thresh_min = 0.0) {
         rclcpp::NodeOptions options;
         options.parameter_overrides({
             rclcpp::Parameter("solver.use_armor_top", true),
             rclcpp::Parameter("solver.use_ballistic_compensation", false),
-            rclcpp::Parameter("solver.compensator_type", "ideal")});
+            rclcpp::Parameter("solver.compensator_type", "ideal"),
+            rclcpp::Parameter("solver.mpc.fire_thresh_min", fire_thresh_min)});
+        solver_.reset();
         node_ = std::make_shared<rclcpp::Node>("solver_mpc_test", options);
         node_->declare_parameter("gimble_frame", "gimbal_link");
         solver_ = std::make_unique<Solver>(node_);
+    }
+    void SetUp() override {
+        create_solver();
         buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
         geometry_msgs::msg::TransformStamped transform;
         transform.header.stamp = now_;
@@ -58,6 +63,21 @@ TEST_F(SolverMotionSwitches, plansWithoutFeedback) {
     EXPECT_NEAR(command.yaw, 0, 1e-8);
     EXPECT_NEAR(command.pitch, 0, 1e-8);
     EXPECT_TRUE(command.fire_advice);
+}
+
+TEST_F(SolverMotionSwitches, blocksFireBelowMinimumPlanningError) {
+    create_solver(0.001);
+    const auto command = solve();
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
+    EXPECT_FALSE(command.fire_advice);
+}
+
+TEST_F(SolverMotionSwitches, rejectsReversedFireErrorRange) {
+    create_solver(0.004);
+    const auto command = solve();
+    EXPECT_FALSE(command.reference_valid);
+    EXPECT_FALSE(command.fire_advice);
+    EXPECT_EQ(command.reference_status, "invalid_mpc_config");
 }
 
 TEST_F(SolverMotionSwitches, usesWholeTargetInsteadOfTranslationArmor) {
