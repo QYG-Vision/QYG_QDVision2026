@@ -131,17 +131,12 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     command.pitch_vel_rad_s = pitch_plan->velocity;
     command.yaw_acc_rad_s2 = yaw_plan->acceleration;
     command.pitch_acc_rad_s2 = pitch_plan->acceleration;
-    // 与济瞄 plan.fire 一致：中点后2拍的参考与规划误差，阈值单位 rad。
+    // 开火建议只检查小 yaw 和共用 pitch 在中点后2拍的规划误差，阈值单位 rad。
     const int fire_index = half + 2;
     command.fire_advice = std::hypot(
         yaw[fire_index] - yaw_small_mpc_->sample_at(fire_index).position,
         pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position)
         < fire_thresh_;
-    if (dual_yaw_enabled_) {
-        command.fire_advice = command.fire_advice && std::hypot(
-            yaw[fire_index] - yaw_large_mpc_->sample_at(fire_index).position,
-            pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position) < fire_thresh_;
-    }
     // 实际反馈仅用于误差诊断，不作为规划或开火门槛。
     if (feedback_) {
         command.yaw_diff = std::remainder(command.yaw - feedback_->yaw, 2.0 * M_PI);

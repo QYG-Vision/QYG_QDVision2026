@@ -51,7 +51,7 @@
         horizon: 100
         dt: 0.01
         dual_yaw_enabled: true       # 哨兵双 yaw；单 yaw 车型设置为 false
-        fire_thresh: 0.003          # rad，共用 pitch 与两路 yaw 均满足规划误差阈值
+        fire_thresh: 0.003          # rad，小 yaw 与共用 pitch 的规划误差范数阈值
         feedback_timeout: 0.1
         target_timeout: 0.3
         # 下列值沿用原配置基线，须分别依据实际机构调参。
