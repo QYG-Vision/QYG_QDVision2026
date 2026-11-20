@@ -79,7 +79,11 @@ std::optional<AxisMpc::Sample> AxisMpc::plan(const std::vector<double>& referenc
     const int output = c.horizon / 2;
     const Sample result = sample_at(output);
     if (!std::isfinite(result.position) || !std::isfinite(result.velocity)
-        || !std::isfinite(result.acceleration)) return std::nullopt;
+        || !std::isfinite(result.acceleration)
+        || std::abs(result.acceleration) > c.max_acceleration + 1e-6) {
+        // 有限迭代可能返回越界解，拒绝该参考，避免突破该轴配置的加速度上限。
+        return std::nullopt;
+    }
     return result;
 }
 AxisMpc::Sample AxisMpc::sample_at(int index) const {

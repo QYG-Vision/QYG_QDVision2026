@@ -165,12 +165,14 @@ private:
      * @param target 当前跟踪目标，包含坐标系和采样时间。
      * @param now 本轮求解的 ROS 时间。
      * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
-     * @return 弹道有效且两轴结果有限时返回 true，与济瞄一样不强制收敛。
+     * @return 弹道有效且所有启用轴的结果有限时返回 true，与济瞄一样不强制收敛。
      */
     bool plan_mpc(const rm_interfaces::msg::Target& target,
                   const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
-    std::unique_ptr<AxisMpc> yaw_mpc_;
+    std::unique_ptr<AxisMpc> yaw_small_mpc_;
+    std::unique_ptr<AxisMpc> yaw_large_mpc_;
     std::unique_ptr<AxisMpc> pitch_mpc_;
+    bool dual_yaw_enabled_ = false;
     AxisMpc::Config mpc_config_;
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;

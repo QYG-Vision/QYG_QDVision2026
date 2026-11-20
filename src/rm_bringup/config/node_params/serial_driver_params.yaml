@@ -5,8 +5,8 @@
     timestamp_offset: 0.000
     max_timestamp_age: 0.200
     port_name: "/dev/ttyUSB0"  # 串口设备名
-    # float32 弧度：发送40/接收32字节，0xFE帧头；视觉与电控波特率须一致
+    # float32 弧度：哨兵发送52/接收36字节，0xFE帧头；视觉与电控波特率须一致
     baud_rate: 921600
-    protocol: "infantry"  # ProtocolInfantry: infantry, DefaultProtocol: hero air, ProtocolSentry: sentry
+    protocol: "sentry"  # ProtocolInfantry: infantry, DefaultProtocol: hero air, ProtocolSentry: sentry
     enable_data_print: false # 改为true将会打印从串口读出来的16进制数据
 

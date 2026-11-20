@@ -70,13 +70,32 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     fire_thresh_ = node->declare_parameter("solver.mpc.fire_thresh", 0.003);
     feedback_timeout_ = node->declare_parameter("solver.mpc.feedback_timeout", 0.1);
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
-    mpc_config_.max_acceleration =
+    dual_yaw_enabled_ = node->declare_parameter("solver.mpc.dual_yaw_enabled", false);
+    // 保留旧参数作为逐轴配置的缺省值，原有配置文件仍可加载。
+    const auto load_axis_config = [&](const std::string& axis, double acceleration) {
+        auto config = mpc_config_;
+        const std::string prefix = "solver.mpc." + axis + ".";
+        config.max_acceleration =
+            node->declare_parameter(prefix + "max_acceleration", acceleration);
+        config.position_weight =
+            node->declare_parameter(prefix + "position_weight", config.position_weight);
+        config.velocity_weight =
+            node->declare_parameter(prefix + "velocity_weight", config.velocity_weight);
+        config.acceleration_weight =
+            node->declare_parameter(prefix + "acceleration_weight", config.acceleration_weight);
+        config.max_iterations =
+            node->declare_parameter(prefix + "max_iterations", config.max_iterations);
+        return config;
+    };
+    const double legacy_yaw_acceleration =
         node->declare_parameter("solver.mpc.yaw.max_acceleration", 50.0);
-    yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
-    auto pitch_config = mpc_config_;
-    pitch_config.max_acceleration =
-        node->declare_parameter("solver.mpc.pitch.max_acceleration", 100.0);
-    pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
+    yaw_small_mpc_ = std::make_unique<AxisMpc>(
+        load_axis_config("yaw_small", legacy_yaw_acceleration));
+    if (dual_yaw_enabled_) {
+        yaw_large_mpc_ = std::make_unique<AxisMpc>(
+            load_axis_config("yaw_large", legacy_yaw_acceleration));
+    }
+    pitch_mpc_ = std::make_unique<AxisMpc>(load_axis_config("pitch", 100.0));
 
     node.reset();
 }

@@ -14,19 +14,24 @@
 // limitations under the License.
 
 #include "rm_serial_driver/protocol/sentry_protocol.hpp"
+#include "rm_serial_driver/sentry_codec.hpp"
 // ros2
 #include <geometry_msgs/msg/twist.hpp>
 
 namespace qd::serial_driver::protocol {
 ProtocolSentry::ProtocolSentry(std::string_view port_name, int speed, bool enable_data_print) {
   auto uart_transporter = std::make_shared<UartTransporter>(std::string(port_name), speed);
-  packet_tool_ = std::make_shared<FixedPacketTool<32>>(uart_transporter);
+  packet_tool_ = std::make_shared<FixedPacketTool<36>>(uart_transporter);
   packet_tool_->enbaleDataPrint(enable_data_print);
 }
 
 void ProtocolSentry::send(const rm_interfaces::msg::GimbalCmd &data) {
-    FixedPacket<40> packet;
-    const SendPacket pkt = encodeGimbalCommand(data);
+    FixedPacket<52> packet;
+    auto reference = data;
+    if (feedback_mode_.load() > 1) {
+        reference.reference_valid = false;
+    }
+    const auto pkt = sentry::encode(reference, armor_id_to_uint8(data.id));
     packet.copyFrom(pkt.data());
 
     packet_tool_->sendPacket(packet);
@@ -64,13 +69,17 @@ void ProtocolSentry::send(const rm_interfaces::msg::ChassisCmd &data) {
 }
 
 bool ProtocolSentry::receive(rm_interfaces::msg::SerialReceiveData &data) {
-    FixedPacket<32> packet;
+    FixedPacket<36> packet;
     if (!packet_tool_->recvPacket(packet)) {
         return false;
     }
-    ReceivePacket frame{};
+    sentry::FeedbackFrame frame{};
     std::copy_n(packet.buffer(), frame.size(), frame.begin());
-    return decodeFeedback(frame, data);
+    if (!sentry::decode(frame, data)) {
+        return false;
+    }
+    feedback_mode_.store(data.mode);
+    return true;
 }
 
 std::vector<rclcpp::SubscriptionBase::SharedPtr> ProtocolSentry::getSubscriptions(

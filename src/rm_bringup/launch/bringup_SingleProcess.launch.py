@@ -98,7 +98,11 @@ def generate_launch_description():
             ))
         else:
             serial_driver_params = [get_params('serial_driver')]
-            if not launch_params.get('rune', True):
+            with open(get_params('serial_driver')) as serial_config_file:
+                serial_config = yaml.safe_load(serial_config_file)
+            configured_protocol = serial_config['/**']['ros__parameters'].get(
+                'protocol', 'infantry')
+            if not launch_params.get('rune', True) and configured_protocol != 'sentry':
                 serial_driver_params.append({'protocol': 'hero'})
 
             composable_nodes.append(ComposableNode(
