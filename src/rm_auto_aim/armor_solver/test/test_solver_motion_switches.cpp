@@ -13,20 +13,15 @@ protected:
         }
         FYT_REGISTER_LOGGER("armor_solver", "/tmp/qyg-mpc-test-log", INFO);
     }
-    void create_solver(double fire_thresh_min = 0.0) {
+    void SetUp() override {
         rclcpp::NodeOptions options;
         options.parameter_overrides({
             rclcpp::Parameter("solver.use_armor_top", true),
             rclcpp::Parameter("solver.use_ballistic_compensation", false),
-            rclcpp::Parameter("solver.compensator_type", "ideal"),
-            rclcpp::Parameter("solver.mpc.fire_thresh_min", fire_thresh_min)});
-        solver_.reset();
+            rclcpp::Parameter("solver.compensator_type", "ideal")});
         node_ = std::make_shared<rclcpp::Node>("solver_mpc_test", options);
         node_->declare_parameter("gimble_frame", "gimbal_link");
         solver_ = std::make_unique<Solver>(node_);
-    }
-    void SetUp() override {
-        create_solver();
         buffer_ = std::make_shared<tf2_ros::Buffer>(node_->get_clock());
         geometry_msgs::msg::TransformStamped transform;
         transform.header.stamp = now_;
@@ -63,33 +58,6 @@ TEST_F(SolverMotionSwitches, plansWithoutFeedback) {
     EXPECT_NEAR(command.yaw, 0, 1e-8);
     EXPECT_NEAR(command.pitch, 0, 1e-8);
     EXPECT_TRUE(command.fire_advice);
-}
-
-TEST_F(SolverMotionSwitches, blocksFireBelowMinimumPlanningError) {
-    create_solver(0.001);
-    const auto command = solve();
-    ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_FALSE(command.fire_advice);
-}
-
-TEST_F(SolverMotionSwitches, preservesMpcReferenceWithReversedFireErrorRange) {
-    target_.position.y = 0.5;
-    target_.yaw = 0.5;
-    target_.v_yaw = 3.0;
-    const auto baseline = solve();
-    ASSERT_TRUE(baseline.reference_valid) << baseline.reference_status;
-
-    create_solver(0.004);
-    const auto command = solve();
-    ASSERT_TRUE(command.reference_valid) << command.reference_status;
-    EXPECT_FALSE(command.fire_advice);
-    EXPECT_EQ(command.reference_status, baseline.reference_status);
-    EXPECT_DOUBLE_EQ(command.yaw, baseline.yaw);
-    EXPECT_DOUBLE_EQ(command.pitch, baseline.pitch);
-    EXPECT_FLOAT_EQ(command.yaw_vel_rad_s, baseline.yaw_vel_rad_s);
-    EXPECT_FLOAT_EQ(command.pitch_vel_rad_s, baseline.pitch_vel_rad_s);
-    EXPECT_FLOAT_EQ(command.yaw_acc_rad_s2, baseline.yaw_acc_rad_s2);
-    EXPECT_FLOAT_EQ(command.pitch_acc_rad_s2, baseline.pitch_acc_rad_s2);
 }
 
 TEST_F(SolverMotionSwitches, usesWholeTargetInsteadOfTranslationArmor) {

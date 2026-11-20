@@ -174,8 +174,7 @@ private:
     AxisMpc::Config mpc_config_;
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;
-    double fire_thresh_min_ = 0.0;
-    double fire_thresh_max_ = 0.003;
+    double fire_thresh_ = 0.003; // 济瞄规划误差阈值，rad。
     double feedback_timeout_ = 0.1;
     double target_timeout_ = 0.3;
 
