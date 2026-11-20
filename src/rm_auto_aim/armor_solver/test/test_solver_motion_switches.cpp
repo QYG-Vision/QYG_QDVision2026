@@ -72,12 +72,24 @@ TEST_F(SolverMotionSwitches, blocksFireBelowMinimumPlanningError) {
     EXPECT_FALSE(command.fire_advice);
 }
 
-TEST_F(SolverMotionSwitches, rejectsReversedFireErrorRange) {
+TEST_F(SolverMotionSwitches, preservesMpcReferenceWithReversedFireErrorRange) {
+    target_.position.y = 0.5;
+    target_.yaw = 0.5;
+    target_.v_yaw = 3.0;
+    const auto baseline = solve();
+    ASSERT_TRUE(baseline.reference_valid) << baseline.reference_status;
+
     create_solver(0.004);
     const auto command = solve();
-    EXPECT_FALSE(command.reference_valid);
+    ASSERT_TRUE(command.reference_valid) << command.reference_status;
     EXPECT_FALSE(command.fire_advice);
-    EXPECT_EQ(command.reference_status, "invalid_mpc_config");
+    EXPECT_EQ(command.reference_status, baseline.reference_status);
+    EXPECT_DOUBLE_EQ(command.yaw, baseline.yaw);
+    EXPECT_DOUBLE_EQ(command.pitch, baseline.pitch);
+    EXPECT_FLOAT_EQ(command.yaw_vel_rad_s, baseline.yaw_vel_rad_s);
+    EXPECT_FLOAT_EQ(command.pitch_vel_rad_s, baseline.pitch_vel_rad_s);
+    EXPECT_FLOAT_EQ(command.yaw_acc_rad_s2, baseline.yaw_acc_rad_s2);
+    EXPECT_FLOAT_EQ(command.pitch_acc_rad_s2, baseline.pitch_acc_rad_s2);
 }
 
 TEST_F(SolverMotionSwitches, usesWholeTargetInsteadOfTranslationArmor) {
