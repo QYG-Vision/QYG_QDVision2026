@@ -10,7 +10,6 @@
 
 namespace qd::serial_driver::v2 {
 using CommandFrame = std::array<uint8_t, 40>;
-using FeedbackFrame = std::array<uint8_t, 32>;
 static_assert(sizeof(float) == 4 && std::numeric_limits<float>::is_iec559);
 
 /**
@@ -96,36 +95,5 @@ CommandFrame encode(const Command& data, uint8_t id) {
     return out;
 }
 
-/**
- * @brief 校验并解码完整反馈，失败时不修改输出消息。
- * @param frame 完整的 32 字节状态帧，预留校验位尚未启用。
- * @param data 输出原协议正方向的姿态（rad）、角速度（rad/s）、弹速（m/s）与时间戳（ms）。
- * @return 帧头尾、模式及全部浮点字段合法时为 true。
- */
-template <typename Feedback>
-bool decode(const FeedbackFrame& frame, Feedback& data) {
-    if (frame.front() != 0xfe || frame.back() != 0x0d || frame[1] > 5) {
-        return false;
-    }
-    constexpr std::array<unsigned, 6> OFFSETS{2, 6, 10, 14, 22, 26};
-    std::array<float, 6> values{};
-    for (unsigned i = 0; i < values.size(); ++i) {
-        values[i] = getFloat(frame.data() + OFFSETS[i]);
-        if (!std::isfinite(values[i])) {
-            return false;
-        }
-    }
-    auto decoded = data;
-    decoded.mode = frame[1];
-    decoded.roll = values[0];
-    decoded.pitch = values[1];
-    decoded.yaw = values[2];
-    decoded.bullet_speed = values[3];
-    decoded.mcu_timestamp = get(frame.data() + 18, 4);
-    decoded.yaw_actual_vel_rad_s = values[4];
-    decoded.pitch_actual_vel_rad_s = values[5];
-    data = decoded;
-    return true;
-}
 } // namespace qd::serial_driver::v2
 #endif

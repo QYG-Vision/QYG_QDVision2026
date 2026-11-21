@@ -15,8 +15,7 @@
 
 #include "rm_serial_driver/protocol/sentry_protocol.hpp"
 #include "rm_serial_driver/sentry_codec.hpp"
-// ros2
-#include <geometry_msgs/msg/twist.hpp>
+#include "rm_serial_driver/uart_transporter.hpp"
 
 namespace qd::serial_driver::protocol {
 ProtocolSentry::ProtocolSentry(std::string_view port_name, int speed, bool enable_data_print) {

@@ -46,21 +46,13 @@ void SerialDriverNode::init() {
     target_frame_ = this->declare_parameter("target_frame", "odom");
     child_frame_id_ = this->declare_parameter("child_frame_id", "gimbal_link");
     std::string port_name = this->declare_parameter("port_name", "/dev/ttyUSB0");
-    std::string protocol_type = this->declare_parameter("protocol", "infantry");
     bool enable_data_print = this->declare_parameter("enable_data_print", false);
-    int baud_rate = this->declare_parameter("baud_rate", 115200);
-    // Create Protocol
-    protocol_ =
-        ProtocolFactory::createProtocol(protocol_type, port_name, baud_rate, enable_data_print);
-    if (protocol_ == nullptr) {
-        FYT_FATAL("serial_driver", "Failed to create protocol with type: {}", protocol_type);
-        rclcpp::shutdown();
-        return;
-    }
+    int baud_rate = this->declare_parameter("baud_rate", 921600);
+    protocol_ = std::make_unique<protocol::ProtocolSentry>(
+        port_name, baud_rate, enable_data_print);
     FYT_INFO(
         "serial_driver",
-        "Protocol has been created with type: {}, port: {}",
-        protocol_type,
+        "Sentry protocol has been created, port: {}",
         port_name
     );
 

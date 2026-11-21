@@ -20,7 +20,7 @@
 - Toggle behavior is controlled by `src/rm_bringup/config/launch_params.yaml`; most runtime changes should happen there first.
 - In launch logic, `replay: true` forcibly disables state-machine camera, video player, and virtual/physical serial inputs to avoid source conflicts.
 - If both `record` and `auto_record` are true, launch code disables `record` at runtime.
-- `rune: false` changes serial protocol handling (serial params get `protocol: hero`).
+- The serial driver only supports the sentry protocol; `rune` does not change the serial layout.
 
 ## Build/test expectations
 - Many CMake targets compile with `-Wall -Werror` (warnings fail builds); keep changes warning-clean.

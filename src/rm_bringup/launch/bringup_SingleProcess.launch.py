@@ -97,20 +97,12 @@ def generate_launch_description():
                 extra_arguments=[{'use_intra_process_comms': True}]
             ))
         else:
-            serial_driver_params = [get_params('serial_driver')]
-            with open(get_params('serial_driver')) as serial_config_file:
-                serial_config = yaml.safe_load(serial_config_file)
-            configured_protocol = serial_config['/**']['ros__parameters'].get(
-                'protocol', 'infantry')
-            if not launch_params.get('rune', True) and configured_protocol != 'sentry':
-                serial_driver_params.append({'protocol': 'hero'})
-
             composable_nodes.append(ComposableNode(
                 package='rm_serial_driver',
                 plugin='qd::serial_driver::SerialDriverNode',
                 name='serial_driver',
                 namespace=node_namespace,
-                parameters=serial_driver_params,
+                parameters=[get_params('serial_driver')],
                 extra_arguments=[{'use_intra_process_comms': True}]
             ))
     # 4. 装甲板识别 (Armor Detector)

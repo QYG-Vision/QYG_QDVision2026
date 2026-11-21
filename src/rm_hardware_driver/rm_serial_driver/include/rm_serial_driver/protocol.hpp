@@ -17,34 +17,22 @@
 #define SERIAL_DRIVER_PROTOCOL_HPP_
 
 // std
-#include <algorithm>
-#include <atomic>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <map>
 #include <memory>
 #include <set>
 #include <string>
 #include <string_view>
 // ros2
-#include <geometry_msgs/msg/twist.hpp>
 #include <rclcpp/rclcpp.hpp>
 // project
-#include "rm_interfaces/msg/chassis_cmd.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/srv/set_mode.hpp"
 #include "rm_utils/logger/log.hpp"
-#include "rm_serial_driver/fixed_packet.hpp"
-#include "rm_serial_driver/v2_codec.hpp"
-#include "rm_serial_driver/fixed_packet_tool.hpp"
-#include "rm_serial_driver/uart_transporter.hpp"
 
 namespace qd::serial_driver::protocol {
-typedef enum : unsigned char { Fire = 0x01, NotFire = 0x00 } FireState;
-
 // Protocol interface
 class Protocol {
 public:
@@ -66,9 +54,6 @@ public:
 
     virtual std::string getErrorMessage() = 0;
 
-    using SendPacket = v2::CommandFrame;
-    using ReceivePacket = v2::FeedbackFrame;
-
     uint8_t armor_id_to_uint8(const std::string& id) {
         const auto it = id_unit8_map.find(id);
         if (it != id_unit8_map.end()) {
@@ -87,31 +72,7 @@ public:
                                                          { "negative", 9 },
                                                          { "0", 0 } };
 
-protected:
-    /**
-     * @brief 显式编码 V2 规划参考，完整规划未就绪时发送无目标帧。
-     * @param data 绝对角（rad）、规划导数（rad/s、rad/s²），同一时刻且符号一致。
-     * @return 40 字节 float32 弧度帧。
-     */
-    SendPacket encodeGimbalCommand(const rm_interfaces::msg::GimbalCmd& data) {
-        auto reference = data;
-        if (feedback_mode_.load() > 1) {
-            reference.reference_valid = false;
-        }
-        return v2::encode(reference, armor_id_to_uint8(data.id));
-    }
-
-    /** @brief 通过完整反馈校验后更新模式，能量机关模式禁止有效规划发送。 */
-    bool decodeFeedback(const ReceivePacket& frame, rm_interfaces::msg::SerialReceiveData& data) {
-        if (!v2::decode(frame, data)) {
-            return false;
-        }
-        feedback_mode_.store(data.mode);
-        return true;
-    }
-
 private:
-    std::atomic<uint8_t> feedback_mode_{0};
     std::set<std::string> warned_unknown_ids_;
 };
 

@@ -1,29 +1,15 @@
 #include <array>
 #include <cstdint>
 #include <limits>
-#include <string>
-#include <vector>
 
 #include "gtest/gtest.h"
-#include "rm_serial_driver/protocol.hpp"
+#include "rm_interfaces/msg/gimbal_cmd.hpp"
+#include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_serial_driver/sentry_codec.hpp"
 #include "rm_utils/time_synchronizer.hpp"
 
 namespace {
 namespace v2 = qd::serial_driver::v2;
-
-class TestProtocol : public qd::serial_driver::protocol::Protocol {
-public:
-    using Protocol::encodeGimbalCommand;
-    using Protocol::decodeFeedback;
-    void send(const rm_interfaces::msg::GimbalCmd&) override {}
-    bool receive(rm_interfaces::msg::SerialReceiveData&) override { return false; }
-    std::vector<rclcpp::SubscriptionBase::SharedPtr>
-    getSubscriptions(rclcpp::Node::SharedPtr) override { return {}; }
-    std::vector<rclcpp::Client<rm_interfaces::srv::SetMode>::SharedPtr>
-    getClients(rclcpp::Node::SharedPtr) const override { return {}; }
-    std::string getErrorMessage() override { return {}; }
-};
 
 /**
  * @brief 构造各轴同一时刻、以弧度及其导数表示的完整规划参考。
@@ -52,15 +38,7 @@ const v2::CommandFrame INVALID_COMMAND{
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d
 };
-const v2::FeedbackFrame FEEDBACK{
-    0xfe, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x3e, 0x80,
-    0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x41, 0x80,
-    0x00, 0x00, 0x12, 0x34, 0x56, 0x78, 0x3f, 0x00,
-    0x00, 0x00, 0xbf, 0x00, 0x00, 0x00, 0x00, 0x0d
-};
-
-TEST(ProtocolEncoding, matchesIndependent40ByteGoldenCommand) {
-    TestProtocol protocol;
+TEST(SentryCommandEncoding, matchesIndependent40ByteGoldenCommand) {
     const v2::CommandFrame expected{
         0xfe, 0x01, 0x3f, 0x00, 0x00, 0x00, 0xbe, 0x80,
         0x00, 0x00, 0x3f, 0xa0, 0x00, 0x00, 0x03, 0x3e,
@@ -69,31 +47,28 @@ TEST(ProtocolEncoding, matchesIndependent40ByteGoldenCommand) {
         0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x0d
     };
     EXPECT_EQ(sizeof(v2::CommandFrame), 40U);
-    EXPECT_EQ(sizeof(v2::FeedbackFrame), 32U);
-    EXPECT_EQ(protocol.encodeGimbalCommand(reference()), expected);
+    EXPECT_EQ(v2::encode(reference(), 3), expected);
 }
 
-TEST(ProtocolEncoding, rejectsMissingPlanningAndNonpositiveOrUnderflowingDistance) {
-    TestProtocol protocol;
+TEST(SentryCommandEncoding, rejectsMissingPlanningAndNonpositiveOrUnderflowingDistance) {
     auto command = reference();
     command.reference_valid = false;
-    EXPECT_EQ(protocol.encodeGimbalCommand(command), INVALID_COMMAND);
+    EXPECT_EQ(v2::encode(command, 3), INVALID_COMMAND);
     for (const double distance : {0.0, -1.0, 1e-300}) {
         command = reference();
         command.distance = distance;
-        EXPECT_EQ(protocol.encodeGimbalCommand(command), INVALID_COMMAND);
+        EXPECT_EQ(v2::encode(command, 3), INVALID_COMMAND);
     }
 }
 
-TEST(ProtocolEncoding, preservesDirectFloatValuesAndSmallPositiveDistance) {
-    TestProtocol protocol;
+TEST(SentryCommandEncoding, preservesDirectFloatValuesAndSmallPositiveDistance) {
     auto command = reference();
     command.yaw = 1000.125;
     command.pitch = -1000.125;
     command.target_v_yaw = 10000.125;
     command.distance = 0.001;
     command.yaw_acc_rad_s2 = 1000.0f;
-    const auto packet = protocol.encodeGimbalCommand(command);
+    const auto packet = v2::encode(command, 3);
     EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 2), 1000.125f);
     EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 6), -1000.125f);
     EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 10), 0.001f);
@@ -102,7 +77,7 @@ TEST(ProtocolEncoding, preservesDirectFloatValuesAndSmallPositiveDistance) {
     EXPECT_EQ(packet[19], 1);
 }
 
-TEST(ProtocolEncoding, rejectsNonfiniteAndOverflowInEveryPhysicalField) {
+TEST(SentryCommandEncoding, rejectsNonfiniteAndOverflowInEveryPhysicalField) {
     struct WideCommand {
         bool reference_valid = true;
         bool fire_advice = true;
@@ -126,63 +101,6 @@ TEST(ProtocolEncoding, rejectsNonfiniteAndOverflowInEveryPhysicalField) {
         }
     }
     EXPECT_EQ(v2::encode(WideCommand{}, 10), INVALID_COMMAND);
-}
-
-TEST(ProtocolEncoding, decodes32ByteGoldenFeedbackAndRejectsWithoutMutation) {
-    TestProtocol protocol;
-    rm_interfaces::msg::SerialReceiveData data;
-    ASSERT_TRUE(protocol.decodeFeedback(FEEDBACK, data));
-    EXPECT_EQ(data.mode, 1);
-    EXPECT_FLOAT_EQ(data.roll, -0.125f);
-    EXPECT_FLOAT_EQ(data.pitch, 0.25f);
-    EXPECT_FLOAT_EQ(data.yaw, 1.0f);
-    EXPECT_FLOAT_EQ(data.bullet_speed, 16.0f);
-    EXPECT_EQ(data.mcu_timestamp, 0x12345678U);
-    EXPECT_FLOAT_EQ(data.yaw_actual_vel_rad_s, 0.5f);
-    EXPECT_FLOAT_EQ(data.pitch_actual_vel_rad_s, -0.5f);
-    const auto original = data;
-    for (const auto index : {0, 1, 31}) {
-        auto bad = FEEDBACK;
-        bad[index] = 0xff;
-        EXPECT_FALSE(protocol.decodeFeedback(bad, data));
-        EXPECT_EQ(data, original);
-    }
-    for (const auto offset : {2, 6, 10, 14, 22, 26}) {
-        for (const float invalid : {std::numeric_limits<float>::infinity(),
-                                    -std::numeric_limits<float>::infinity(),
-                                    std::numeric_limits<float>::quiet_NaN()}) {
-            auto bad = FEEDBACK;
-            v2::putFloat(bad.data() + offset, invalid);
-            EXPECT_FALSE(protocol.decodeFeedback(bad, data));
-            EXPECT_EQ(data, original);
-        }
-    }
-    ASSERT_TRUE(protocol.decodeFeedback(FEEDBACK, data));
-    EXPECT_EQ(data, original);
-}
-
-TEST(ProtocolEncoding, energyModesCannotSendValidReferences) {
-    TestProtocol protocol;
-    rm_interfaces::msg::SerialReceiveData data;
-    for (uint8_t mode = 0; mode <= 5; ++mode) {
-        auto frame = FEEDBACK;
-        frame[1] = mode;
-        ASSERT_TRUE(protocol.decodeFeedback(frame, data));
-        const auto command = protocol.encodeGimbalCommand(reference());
-        EXPECT_EQ(command[19], mode <= 1 ? 1 : 0);
-        if (mode > 1) EXPECT_EQ(command, INVALID_COMMAND);
-    }
-}
-
-TEST(ProtocolEncoding, acceptsTimestampZeroAndMaximum) {
-    TestProtocol protocol;
-    rm_interfaces::msg::SerialReceiveData data;
-    for (const uint32_t timestamp : {0U, std::numeric_limits<uint32_t>::max()}) {
-        auto frame = FEEDBACK;
-        v2::put(frame.data() + 18, timestamp, 4);
-        ASSERT_TRUE(protocol.decodeFeedback(frame, data));
-        EXPECT_EQ(data.mcu_timestamp, timestamp);
-    }
 }
 
 TEST(SentryProtocolEncoding, decodes36ByteFeedbackAndPreservesLargeYaw) {

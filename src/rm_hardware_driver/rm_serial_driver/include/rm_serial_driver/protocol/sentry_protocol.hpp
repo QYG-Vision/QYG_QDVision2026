@@ -16,8 +16,11 @@
 #ifndef SERIAL_DRIVER__SENTRY_PROTOCOL_HPP_
 #define SERIAL_DRIVER__SENTRY_PROTOCOL_HPP_
 
+#include <atomic>
+
 // project
 #include "rm_interfaces/msg/chassis_cmd.hpp"
+#include "rm_serial_driver/fixed_packet_tool.hpp"
 #include "rm_serial_driver/protocol.hpp"
 
 namespace qd::serial_driver::protocol {

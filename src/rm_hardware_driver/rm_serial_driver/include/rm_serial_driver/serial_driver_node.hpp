@@ -27,21 +27,20 @@
 #include <rclcpp/rclcpp.hpp>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.hpp>
 // project
-#include "rm_utils/heartbeat.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/srv/set_mode.hpp"
 #include "rm_serial_driver/fixed_packet_tool.hpp"
-#include "rm_serial_driver/protocol.hpp"
-#include "rm_serial_driver/protocol_factory.hpp"
+#include "rm_serial_driver/protocol/sentry_protocol.hpp"
 #include "rm_serial_driver/transporter_interface.hpp"
-#include "rm_utils/vision_state_machine.hpp"
+#include "rm_utils/heartbeat.hpp"
 #include "rm_utils/time_synchronizer.hpp"
+#include "rm_utils/vision_state_machine.hpp"
 
 namespace qd::serial_driver {
 
 // Node wrapper for SerialDriver
-// Implementing secondary development through the Protocol class
+// 固定使用哨兵串口协议。
 class SerialDriverNode : public rclcpp::Node {
 public:
   explicit SerialDriverNode(const rclcpp::NodeOptions &options);
@@ -68,7 +67,7 @@ private:
 
   std::unique_ptr<std::thread> listen_thread_;
   // Protocol
-  std::unique_ptr<protocol::Protocol> protocol_;
+  std::unique_ptr<protocol::ProtocolSentry> protocol_;
 
   std::string target_frame_;
   std::string child_frame_id_;

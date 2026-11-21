@@ -2,9 +2,10 @@
 
 FYT视觉24赛季串口通信模块
 
-## QD26 V2 协议
+## QD26 哨兵协议
 
-UART 默认 921600 bit/s，8N1；视觉发送 40 字节，接收 32 字节，帧头 `0xFE`，帧尾 `0x0D`。
+串口驱动只保留哨兵协议，不再提供英雄、步兵或空中机器人协议选择。UART 默认
+921600 bit/s，8N1；视觉发送 40 字节，接收 36 字节，帧头 `0xFE`，帧尾 `0x0D`。
 所有物理量均为大端 IEEE 754 float32 直接值，不乘除 100。角度使用 rad，角速度使用 rad/s，
 角加速度使用 rad/s²，距离为 m，弹速为 m/s；pitch 向下为正，yaw 向左为正。
 四个规划导数和两个实际角速度全部保留，模式、编号、标志位及 uint32 毫秒时间戳仍为整数。
@@ -16,7 +17,7 @@ UART 默认 921600 bit/s，8N1；视觉发送 40 字节，接收 32 字节，帧
 
 反馈通过 `serial/receive` 发布实际角速度；非法模式及 NaN/Inf 整帧拒绝。
 MCU 毫秒时间戳映射支持回绕，0 也是合法 tick，重复快照保持原时间。
-哨兵下行沿用 40 字节单 yaw 规划，上行保留大、小 yaw 实测量；详见
+下行只规划小 yaw 和 pitch，上行保留大、小 yaw 实测量；详见
 [哨兵协议，40/36 字节](../../../哨兵串口协议_电控对接.md)。
 
 ## qd::SerialDriverNode
@@ -31,14 +32,14 @@ MCU 毫秒时间戳映射支持回绕，0 也是合法 tick，重复快照保持
 ### Subscribed Topics
 
 * `armor_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 装甲板参考
-* `rune_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 步兵/哨兵入口只发送无效参考
+* `rune_solver/cmd_gimbal` (`rm_interfaces/msg/GimbalCmd`) - 能量机关入口只发送无效参考
 
 ### 参数
 
 * `target_frame` (string, default: "odom") - 下位机欧拉角的相对坐标系
 * `timestamp_offset` (double, default: 0.0) - tf数据的时间戳补偿
-* `port_name` (string, default: "/dev/ttyUART") - 串口设备对应的文件名
-* `protocol` (string, default: "infantry") - 协议类型
+* `port_name` (string, default: "/dev/ttyUSB0") - 串口设备对应的文件名
+* `baud_rate` (int, default: 921600) - 哨兵视觉与电控的串口波特率
 * `enable_data_print` (bool, default: false) - 是否打印串口读出的原始数据
 
 ## qd::VirtualSerial
