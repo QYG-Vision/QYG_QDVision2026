@@ -6,6 +6,7 @@
 
 #include "gtest/gtest.h"
 #include "rm_serial_driver/protocol.hpp"
+#include "rm_serial_driver/sentry_codec.hpp"
 #include "rm_utils/time_synchronizer.hpp"
 
 namespace {
@@ -182,6 +183,36 @@ TEST(ProtocolEncoding, acceptsTimestampZeroAndMaximum) {
         ASSERT_TRUE(protocol.decodeFeedback(frame, data));
         EXPECT_EQ(data.mcu_timestamp, timestamp);
     }
+}
+
+TEST(SentryProtocolEncoding, decodes36ByteFeedbackAndPreservesLargeYaw) {
+    const qd::serial_driver::sentry::FeedbackFrame frame{
+        0xfe, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x3e, 0x80,
+        0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x3f, 0x00,
+        0x00, 0x00, 0x41, 0x80, 0x00, 0x00, 0x12, 0x34,
+        0x56, 0x78, 0x3f, 0x00, 0x00, 0x00, 0xbf, 0x00,
+        0x00, 0x00, 0x00, 0x0d
+    };
+    rm_interfaces::msg::SerialReceiveData data;
+    ASSERT_TRUE(qd::serial_driver::sentry::decode(frame, data));
+    EXPECT_EQ(data.mode, 1);
+    EXPECT_FLOAT_EQ(data.roll, -0.125f);
+    EXPECT_FLOAT_EQ(data.pitch, 0.25f);
+    EXPECT_FLOAT_EQ(data.yaw_large, 1.0f);
+    EXPECT_FLOAT_EQ(data.yaw_small, 0.5f);
+    EXPECT_FLOAT_EQ(data.yaw, data.yaw_small);
+    EXPECT_FLOAT_EQ(data.bullet_speed, 16.0f);
+    EXPECT_EQ(data.mcu_timestamp, 0x12345678U);
+    EXPECT_FLOAT_EQ(data.yaw_actual_vel_rad_s, 0.5f);
+    EXPECT_FLOAT_EQ(data.pitch_actual_vel_rad_s, -0.5f);
+    EXPECT_TRUE(data.dual_yaw_feedback);
+
+    const auto original = data;
+    auto invalid = frame;
+    invalid[10] = 0x7f;
+    invalid[11] = 0xc0;
+    EXPECT_FALSE(qd::serial_driver::sentry::decode(invalid, data));
+    EXPECT_EQ(data, original);
 }
 
 TEST(V2TimeSynchronizer, retainsDuplicateTimeAndUnwrapsThroughZero) {

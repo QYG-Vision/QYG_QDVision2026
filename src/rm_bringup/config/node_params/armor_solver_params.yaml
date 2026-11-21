@@ -50,30 +50,17 @@
         enabled: true
         horizon: 100
         dt: 0.01
-        dual_yaw_enabled: true       # 哨兵双 yaw；单 yaw 车型设置为 false
-        fire_thresh: 0.003          # rad，小 yaw 与共用 pitch 的规划误差范数阈值
-        feedback_timeout: 0.1
-        target_timeout: 0.3
-        # 下列值沿用原配置基线，须分别依据实际机构调参。
-        # 加速度为 rad/s²；三个轴各自维护求解器和权重。
-        yaw_small:
-          max_acceleration: 50.0
-          position_weight: 9000000.0
-          velocity_weight: 0.0
-          acceleration_weight: 1.0
-          max_iterations: 10
-        yaw_large:
-          max_acceleration: 50.0
-          position_weight: 9000000.0
-          velocity_weight: 0.0
-          acceleration_weight: 1.0
-          max_iterations: 10
+        position_weight: 9000000.0
+        velocity_weight: 0.0
+        acceleration_weight: 1.0
+        fire_thresh: 0.003          # 同济 Planner：第52点两轴规划误差范数，rad
+        max_iterations: 10
+        feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
+        target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
+        yaw:
+          max_acceleration: 50 # rad/s²
         pitch:
-          max_acceleration: 100.0
-          position_weight: 9000000.0
-          velocity_weight: 0.0
-          acceleration_weight: 1.0
-          max_iterations: 10
+          max_acceleration: 100 # rad/s²
 
       # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿°, yaw轴补偿°"]
       # 原弧度值换成配置角度：degree = rad × 180 / π；读取时转回 rad = degree × π / 180

@@ -25,7 +25,6 @@ void Solver::update_feedback(const rm_interfaces::msg::SerialReceiveData& feedba
 bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
                       const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command) {
     command.reference_valid = false;
-    command.dual_yaw_reference = false;
     command.fire_advice = false;
     const auto reject = [&](const char* reason) {
         command.reference_status = reason;
@@ -113,28 +112,19 @@ bool Solver::plan_mpc(const rm_interfaces::msg::Target& target,
     } catch (const std::runtime_error& error) {
         return reject(error.what());
     }
-    const auto yaw_plan = yaw_small_mpc_->plan(yaw, &yaw_velocity);
-    const auto large_plan = dual_yaw_enabled_
-        ? yaw_large_mpc_->plan(yaw, &yaw_velocity) : yaw_plan;
+    const auto yaw_plan = yaw_mpc_->plan(yaw, &yaw_velocity);
     const auto pitch_plan = pitch_mpc_->plan(pitch, &pitch_velocity);
-    if (!yaw_plan || !large_plan || !pitch_plan) return reject("invalid_mpc_output");
+    if (!yaw_plan || !pitch_plan) return reject("invalid_mpc_output");
     command.yaw = std::remainder(yaw_plan->position + yaw0, 2.0 * M_PI);
-    command.yaw_small = command.yaw;
-    command.yaw_large = std::remainder(large_plan->position + yaw0, 2.0 * M_PI);
-    command.yaw_small_vel_rad_s = yaw_plan->velocity;
-    command.yaw_large_vel_rad_s = large_plan->velocity;
-    command.yaw_small_acc_rad_s2 = yaw_plan->acceleration;
-    command.yaw_large_acc_rad_s2 = large_plan->acceleration;
-    command.dual_yaw_reference = dual_yaw_enabled_;
     command.pitch = pitch_plan->position;
     command.yaw_vel_rad_s = yaw_plan->velocity;
     command.pitch_vel_rad_s = pitch_plan->velocity;
     command.yaw_acc_rad_s2 = yaw_plan->acceleration;
     command.pitch_acc_rad_s2 = pitch_plan->acceleration;
-    // 开火建议只检查小 yaw 和共用 pitch 在中点后2拍的规划误差，阈值单位 rad。
+    // 与济瞄 plan.fire 一致：中点后2拍的参考与规划误差，阈值单位 rad。
     const int fire_index = half + 2;
     command.fire_advice = std::hypot(
-        yaw[fire_index] - yaw_small_mpc_->sample_at(fire_index).position,
+        yaw[fire_index] - yaw_mpc_->sample_at(fire_index).position,
         pitch[fire_index] - pitch_mpc_->sample_at(fire_index).position)
         < fire_thresh_;
     // 实际反馈仅用于误差诊断，不作为规划或开火门槛。

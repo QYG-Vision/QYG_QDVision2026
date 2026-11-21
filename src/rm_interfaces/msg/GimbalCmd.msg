@@ -22,12 +22,3 @@ float32 yaw_acc_rad_s2 # rad/s²
 float32 pitch_acc_rad_s2 # rad/s²，向下为正
 
 string reference_status # MPC 状态：valid 或无效原因，仅 ROS 调试，不占串口字节
-
-# 哨兵双 yaw 参考，同一坐标系和参考时刻，pitch 共用。
-bool dual_yaw_reference
-float64 yaw_large # rad
-float64 yaw_small # rad，单 yaw 的 yaw 字段同步保存此路
-float32 yaw_large_vel_rad_s
-float32 yaw_small_vel_rad_s
-float32 yaw_large_acc_rad_s2
-float32 yaw_small_acc_rad_s2

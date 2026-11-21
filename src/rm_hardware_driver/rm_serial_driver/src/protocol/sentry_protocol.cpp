@@ -26,12 +26,12 @@ ProtocolSentry::ProtocolSentry(std::string_view port_name, int speed, bool enabl
 }
 
 void ProtocolSentry::send(const rm_interfaces::msg::GimbalCmd &data) {
-    FixedPacket<52> packet;
+    FixedPacket<40> packet;
     auto reference = data;
     if (feedback_mode_.load() > 1) {
         reference.reference_valid = false;
     }
-    const auto pkt = sentry::encode(reference, armor_id_to_uint8(data.id));
+    const auto pkt = v2::encode(reference, armor_id_to_uint8(data.id));
     packet.copyFrom(pkt.data());
 
     packet_tool_->sendPacket(packet);
