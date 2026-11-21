@@ -169,7 +169,9 @@ TEST(ProtocolEncoding, energyModesCannotSendValidReferences) {
         ASSERT_TRUE(protocol.decodeFeedback(frame, data));
         const auto command = protocol.encodeGimbalCommand(reference());
         EXPECT_EQ(command[19], mode <= 1 ? 1 : 0);
-        if (mode > 1) EXPECT_EQ(command, INVALID_COMMAND);
+        if (mode > 1) {
+            EXPECT_EQ(command, INVALID_COMMAND);
+        }
     }
 }
 
