@@ -1,15 +1,33 @@
 #include <array>
 #include <cstdint>
+#include <cstring>
 #include <limits>
 
 #include "gtest/gtest.h"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
-#include "rm_serial_driver/sentry_codec.hpp"
+#include "rm_serial_driver/protocol/sentry_protocol.hpp"
 #include "rm_utils/time_synchronizer.hpp"
 
 namespace {
-namespace v2 = qd::serial_driver::v2;
+using ProtocolSentry = qd::serial_driver::protocol::ProtocolSentry;
+
+template <typename Packet>
+std::array<uint8_t, sizeof(Packet)> raw_bytes(const Packet &packet) {
+    std::array<uint8_t, sizeof(Packet)> bytes{};
+    std::memcpy(bytes.data(), &packet, bytes.size());
+    return bytes;
+}
+
+float read_float32_be(const ProtocolSentry::Float32Be &field) {
+    uint32_t bits = 0;
+    for (const uint8_t byte : field.bytes) {
+        bits = (bits << 8) | byte;
+    }
+    float value = 0.0f;
+    std::memcpy(&value, &bits, sizeof(value));
+    return value;
+}
 
 /**
  * @brief 构造各轴同一时刻、以弧度及其导数表示的完整规划参考。
@@ -31,7 +49,7 @@ rm_interfaces::msg::GimbalCmd reference() {
     return command;
 }
 
-const v2::CommandFrame INVALID_COMMAND{
+const std::array<uint8_t, 40> INVALID_COMMAND{
     0xfe, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0xbf, 0x80, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -39,25 +57,25 @@ const v2::CommandFrame INVALID_COMMAND{
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0d
 };
 TEST(SentryCommandEncoding, matchesIndependent40ByteGoldenCommand) {
-    const v2::CommandFrame expected{
+    const std::array<uint8_t, 40> expected{
         0xfe, 0x01, 0x3f, 0x00, 0x00, 0x00, 0xbe, 0x80,
         0x00, 0x00, 0x3f, 0xa0, 0x00, 0x00, 0x03, 0x3e,
         0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x3f, 0x80,
         0x00, 0x00, 0xbf, 0x80, 0x00, 0x00, 0x40, 0x00,
         0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, 0x0d
     };
-    EXPECT_EQ(sizeof(v2::CommandFrame), 40U);
-    EXPECT_EQ(v2::encode(reference(), 3), expected);
+    EXPECT_EQ(sizeof(ProtocolSentry::SendPacket), 40U);
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(reference(), 3)), expected);
 }
 
 TEST(SentryCommandEncoding, rejectsMissingPlanningAndNonpositiveOrUnderflowingDistance) {
     auto command = reference();
     command.reference_valid = false;
-    EXPECT_EQ(v2::encode(command, 3), INVALID_COMMAND);
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 3)), INVALID_COMMAND);
     for (const double distance : {0.0, -1.0, 1e-300}) {
         command = reference();
         command.distance = distance;
-        EXPECT_EQ(v2::encode(command, 3), INVALID_COMMAND);
+        EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 3)), INVALID_COMMAND);
     }
 }
 
@@ -68,51 +86,59 @@ TEST(SentryCommandEncoding, preservesDirectFloatValuesAndSmallPositiveDistance) 
     command.target_v_yaw = 10000.125;
     command.distance = 0.001;
     command.yaw_acc_rad_s2 = 1000.0f;
-    const auto packet = v2::encode(command, 3);
-    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 2), 1000.125f);
-    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 6), -1000.125f);
-    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 10), 0.001f);
-    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 15), 10000.125f);
-    EXPECT_FLOAT_EQ(v2::getFloat(packet.data() + 30), 1000.0f);
-    EXPECT_EQ(packet[19], 1);
+    const auto packet = ProtocolSentry::encode(command, 3);
+    EXPECT_FLOAT_EQ(read_float32_be(packet.yaw), 1000.125f);
+    EXPECT_FLOAT_EQ(read_float32_be(packet.pitch), -1000.125f);
+    EXPECT_FLOAT_EQ(read_float32_be(packet.distance), 0.001f);
+    EXPECT_FLOAT_EQ(read_float32_be(packet.target_v_yaw), 10000.125f);
+    EXPECT_FLOAT_EQ(read_float32_be(packet.yaw_acc_rad_s2), 1000.0f);
+    EXPECT_EQ(packet.target_state, 1);
 }
 
 TEST(SentryCommandEncoding, rejectsNonfiniteAndOverflowInEveryPhysicalField) {
-    struct WideCommand {
-        bool reference_valid = true;
-        bool fire_advice = true;
-        double yaw = 0, pitch = 0, distance = 1, target_v_yaw = 0;
-        double yaw_vel_rad_s = 0, pitch_vel_rad_s = 0;
-        double yaw_acc_rad_s2 = 0, pitch_acc_rad_s2 = 0;
-    };
-    const std::array<double WideCommand::*, 8> fields{
-        &WideCommand::yaw, &WideCommand::pitch, &WideCommand::distance,
-        &WideCommand::target_v_yaw, &WideCommand::yaw_vel_rad_s,
-        &WideCommand::pitch_vel_rad_s, &WideCommand::yaw_acc_rad_s2,
-        &WideCommand::pitch_acc_rad_s2
-    };
     for (const double invalid : {std::numeric_limits<double>::quiet_NaN(),
                                  std::numeric_limits<double>::infinity(),
                                  -std::numeric_limits<double>::infinity(), 1e300, -1e300}) {
-        for (const auto field : fields) {
-            WideCommand command;
-            command.*field = invalid;
-            EXPECT_EQ(v2::encode(command, 1), INVALID_COMMAND);
-        }
+        auto command = reference();
+        command.yaw = invalid;
+        EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+        command = reference();
+        command.pitch = invalid;
+        EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+        command = reference();
+        command.distance = invalid;
+        EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+        command = reference();
+        command.target_v_yaw = invalid;
+        EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
     }
-    EXPECT_EQ(v2::encode(WideCommand{}, 10), INVALID_COMMAND);
+    auto command = reference();
+    command.yaw_vel_rad_s = std::numeric_limits<float>::infinity();
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+    command = reference();
+    command.pitch_vel_rad_s = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+    command = reference();
+    command.yaw_acc_rad_s2 = -std::numeric_limits<float>::infinity();
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+    command = reference();
+    command.pitch_acc_rad_s2 = std::numeric_limits<float>::infinity();
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(command, 1)), INVALID_COMMAND);
+    EXPECT_EQ(raw_bytes(ProtocolSentry::encode(reference(), 10)), INVALID_COMMAND);
 }
 
 TEST(SentryProtocolEncoding, decodes36ByteFeedbackAndPreservesLargeYaw) {
-    const qd::serial_driver::sentry::FeedbackFrame frame{
+    const std::array<uint8_t, 36> bytes{
         0xfe, 0x01, 0xbe, 0x00, 0x00, 0x00, 0x3e, 0x80,
         0x00, 0x00, 0x3f, 0x80, 0x00, 0x00, 0x3f, 0x00,
         0x00, 0x00, 0x41, 0x80, 0x00, 0x00, 0x12, 0x34,
         0x56, 0x78, 0x3f, 0x00, 0x00, 0x00, 0xbf, 0x00,
         0x00, 0x00, 0x00, 0x0d
     };
+    ProtocolSentry::ReceivePacket frame;
+    std::memcpy(&frame, bytes.data(), bytes.size());
     rm_interfaces::msg::SerialReceiveData data;
-    ASSERT_TRUE(qd::serial_driver::sentry::decode(frame, data));
+    ASSERT_TRUE(ProtocolSentry::decode(frame, data));
     EXPECT_EQ(data.mode, 1);
     EXPECT_FLOAT_EQ(data.roll, -0.125f);
     EXPECT_FLOAT_EQ(data.pitch, 0.25f);
@@ -127,13 +153,12 @@ TEST(SentryProtocolEncoding, decodes36ByteFeedbackAndPreservesLargeYaw) {
 
     const auto original = data;
     auto invalid = frame;
-    invalid[10] = 0x7f;
-    invalid[11] = 0xc0;
-    EXPECT_FALSE(qd::serial_driver::sentry::decode(invalid, data));
+    invalid.yaw_large.bytes = {0x7f, 0xc0, 0x00, 0x00};
+    EXPECT_FALSE(ProtocolSentry::decode(invalid, data));
     EXPECT_EQ(data, original);
 }
 
-TEST(V2TimeSynchronizer, retainsDuplicateTimeAndUnwrapsThroughZero) {
+TEST(SentryTimeSynchronizer, retainsDuplicateTimeAndUnwrapsThroughZero) {
     qd::utils::TimeSynchronizer sync;
     const auto first = sync.sync(0xfffffffeU, 1000.0);
     EXPECT_DOUBLE_EQ(sync.sync(0xfffffffeU, 1001.0), first);
@@ -147,7 +172,7 @@ TEST(V2TimeSynchronizer, retainsDuplicateTimeAndUnwrapsThroughZero) {
     EXPECT_DOUBLE_EQ(sync.sync(0, 2001.0), 2000.0);
 }
 
-TEST(V2TimeSynchronizer, recoversAfterMcuTimestampRestart) {
+TEST(SentryTimeSynchronizer, recoversAfterMcuTimestampRestart) {
     qd::utils::TimeSynchronizer sync;
     EXPECT_DOUBLE_EQ(sync.sync(1000000U, 1000.0), 1000.0);
     EXPECT_NEAR(sync.sync(1000100U, 1000.1), 1000.1, 1e-6);
@@ -159,7 +184,7 @@ TEST(V2TimeSynchronizer, recoversAfterMcuTimestampRestart) {
     EXPECT_NEAR(sync.sync(102U, 1000.5), 1000.5, 1e-6);
 }
 
-TEST(V2TimeSynchronizer, rejectsOneOutOfOrderPacketWithoutReset) {
+TEST(SentryTimeSynchronizer, rejectsOneOutOfOrderPacketWithoutReset) {
     qd::utils::TimeSynchronizer sync;
     EXPECT_DOUBLE_EQ(sync.sync(0xfffffffeU, 1000.0), 1000.0);
     EXPECT_NEAR(sync.sync(0U, 1000.002), 1000.002, 1e-6);
@@ -169,7 +194,7 @@ TEST(V2TimeSynchronizer, rejectsOneOutOfOrderPacketWithoutReset) {
     EXPECT_NEAR(sync.sync(1U, 1000.003), 1000.003, 1e-6);
 }
 
-TEST(V2TimeSynchronizer, recoversFromLargeInRangeTimestampJump) {
+TEST(SentryTimeSynchronizer, recoversFromLargeInRangeTimestampJump) {
     qd::utils::TimeSynchronizer sync;
     EXPECT_DOUBLE_EQ(sync.sync(3000000000U, 1000.0), 1000.0);
 

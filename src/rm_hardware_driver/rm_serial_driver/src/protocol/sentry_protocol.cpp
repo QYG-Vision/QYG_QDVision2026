@@ -14,71 +14,150 @@
 // limitations under the License.
 
 #include "rm_serial_driver/protocol/sentry_protocol.hpp"
-#include "rm_serial_driver/sentry_codec.hpp"
 #include "rm_serial_driver/uart_transporter.hpp"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstring>
+#include <limits>
+
+namespace {
+using qd::serial_driver::protocol::ProtocolSentry;
+
+void put_uint32_be(std::array<uint8_t, 4> &out, uint32_t value) {
+  for (unsigned i = 0; i < out.size(); ++i) {
+    out[out.size() - 1 - i] = static_cast<uint8_t>(value >> (8 * i));
+  }
+}
+
+uint32_t get_uint32_be(const std::array<uint8_t, 4> &in) {
+  uint32_t value = 0;
+  for (const uint8_t byte : in) {
+    value = (value << 8) | byte;
+  }
+  return value;
+}
+
+void put_float32_be(ProtocolSentry::Float32Be &out, float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  put_uint32_be(out.bytes, bits);
+}
+
+float get_float32_be(const ProtocolSentry::Float32Be &in) {
+  const uint32_t bits = get_uint32_be(in.bytes);
+  float value = 0.0f;
+  std::memcpy(&value, &bits, sizeof(value));
+  return value;
+}
+}  // namespace
 
 namespace qd::serial_driver::protocol {
 ProtocolSentry::ProtocolSentry(std::string_view port_name, int speed, bool enable_data_print) {
   auto uart_transporter = std::make_shared<UartTransporter>(std::string(port_name), speed);
-  packet_tool_ = std::make_shared<FixedPacketTool<36>>(uart_transporter);
+  packet_tool_ = std::make_shared<FixedPacketTool<sizeof(ReceivePacket)>>(uart_transporter);
   packet_tool_->enbaleDataPrint(enable_data_print);
 }
 
 void ProtocolSentry::send(const rm_interfaces::msg::GimbalCmd &data) {
-    FixedPacket<40> packet;
-    auto reference = data;
-    if (feedback_mode_.load() > 1) {
-        reference.reference_valid = false;
-    }
-    const auto pkt = v2::encode(reference, armor_id_to_uint8(data.id));
-    packet.copyFrom(pkt.data());
+  auto reference = data;
+  if (feedback_mode_.load() > 1) {
+    reference.reference_valid = false;
+  }
+  const SendPacket encoded = encode(reference, armor_id_to_uint8(data.id));
+  FixedPacket<sizeof(SendPacket)> packet;
+  packet.copyFrom(reinterpret_cast<const uint8_t *>(&encoded));
+  packet_tool_->sendPacket(packet);
 
-    packet_tool_->sendPacket(packet);
-
-    // 仅打印完整规划参考的前置时间，header.stamp 是 p/v/a 的共同参考时刻。
-    if (!data.reference_valid) {
-        return;
-    }
-    FYT_DEBUG(
-        "serial_driver",
-        "Reference lead(send to sample): {:.2f} ms",
-        (rclcpp::Time(data.header.stamp) - rclcpp::Clock(RCL_ROS_TIME).now()).seconds() * 1e3
-    );
+  // 仅打印实际下发的完整规划参考前置时间，header.stamp 是 p/v/a 的共同参考时刻。
+  if (encoded.target_state == 0) {
+    return;
+  }
+  FYT_DEBUG(
+    "serial_driver",
+    "Reference lead(send to sample): {:.2f} ms",
+    (rclcpp::Time(data.header.stamp) - rclcpp::Clock(RCL_ROS_TIME).now()).seconds() * 1e3);
 }
 
-void ProtocolSentry::send(const rm_interfaces::msg::ChassisCmd &data) {
-/*   // packet_.loadData<unsigned char>(0x00, 1);
-  // is_spin
-  packet_.loadData<unsigned char>(data.is_spining ? 0x01 : 0x00, 2);
-  packet_.loadData<unsigned char>(data.is_navigating ? 0x01 : 0x00, 3);
-  // gimbal control
-  // packet_.loadData<float>(0, 4);
-  // packet_.loadData<float>(0, 8);
-  // packet_.loadData<float>(0, 12);
-  // chassis control
-  // linear x
-  packet_.loadData<float>(data.twist.linear.x, 16);
-  // linear y
-  packet_.loadData<float>(data.twist.linear.y, 20);
-  // angular z
-  packet_.loadData<float>(data.twist.angular.z, 24);
-  // useless data
-  // packet_.loadData<float>(0, 28);
-  packet_tool_->sendPacket(packet_); */
+ProtocolSentry::SendPacket ProtocolSentry::encode(
+  const rm_interfaces::msg::GimbalCmd &data, uint8_t id) {
+  SendPacket packet;
+  put_float32_be(packet.distance, -1.0f);
+
+  const std::array<double, 8> values{
+    data.yaw,           data.pitch,           data.distance,       data.target_v_yaw,
+    data.yaw_vel_rad_s, data.pitch_vel_rad_s, data.yaw_acc_rad_s2, data.pitch_acc_rad_s2};
+  const bool valid = data.reference_valid && id <= 9 && data.distance > 0.0 &&
+    std::all_of(values.begin(), values.end(), [](double value) {
+      return std::isfinite(value) && std::abs(value) <= std::numeric_limits<float>::max();
+    });
+  if (!valid || static_cast<float>(data.distance) <= 0.0f) {
+    return packet;
+  }
+
+  packet.fire_advice = data.fire_advice ? 1 : 0;
+  put_float32_be(packet.yaw, static_cast<float>(data.yaw));
+  put_float32_be(packet.pitch, static_cast<float>(data.pitch));
+  put_float32_be(packet.distance, static_cast<float>(data.distance));
+  packet.id = id;
+  put_float32_be(packet.target_v_yaw, static_cast<float>(data.target_v_yaw));
+  packet.target_state = 1;
+  put_float32_be(packet.yaw_vel_rad_s, data.yaw_vel_rad_s);
+  put_float32_be(packet.pitch_vel_rad_s, data.pitch_vel_rad_s);
+  put_float32_be(packet.yaw_acc_rad_s2, data.yaw_acc_rad_s2);
+  put_float32_be(packet.pitch_acc_rad_s2, data.pitch_acc_rad_s2);
+  return packet;
+}
+
+bool ProtocolSentry::decode(
+  const ReceivePacket &packet, rm_interfaces::msg::SerialReceiveData &data) {
+  if (packet.header != 0xfe || packet.tail_byte != 0x0d || packet.mode > 5) {
+    return false;
+  }
+
+  const std::array<float, 7> values{
+    get_float32_be(packet.roll),
+    get_float32_be(packet.pitch),
+    get_float32_be(packet.yaw_large),
+    get_float32_be(packet.yaw_small),
+    get_float32_be(packet.bullet_speed),
+    get_float32_be(packet.yaw_actual_vel_rad_s),
+    get_float32_be(packet.pitch_actual_vel_rad_s)};
+  if (!std::all_of(values.begin(), values.end(), [](float value) {
+        return std::isfinite(value);
+      })) {
+    return false;
+  }
+
+  auto decoded = data;
+  decoded.mode = packet.mode;
+  decoded.roll = values[0];
+  decoded.pitch = values[1];
+  decoded.yaw_large = values[2];
+  decoded.yaw_small = values[3];
+  decoded.yaw = decoded.yaw_small;
+  decoded.bullet_speed = values[4];
+  decoded.mcu_timestamp = get_uint32_be(packet.mcu_timestamp.bytes);
+  decoded.yaw_actual_vel_rad_s = values[5];
+  decoded.pitch_actual_vel_rad_s = values[6];
+  decoded.dual_yaw_feedback = true;
+  data = decoded;
+  return true;
 }
 
 bool ProtocolSentry::receive(rm_interfaces::msg::SerialReceiveData &data) {
-    FixedPacket<36> packet;
-    if (!packet_tool_->recvPacket(packet)) {
-        return false;
-    }
-    sentry::FeedbackFrame frame{};
-    std::copy_n(packet.buffer(), frame.size(), frame.begin());
-    if (!sentry::decode(frame, data)) {
-        return false;
-    }
-    feedback_mode_.store(data.mode);
-    return true;
+  FixedPacket<sizeof(ReceivePacket)> wire_packet;
+  if (!packet_tool_->recvPacket(wire_packet)) {
+    return false;
+  }
+  ReceivePacket packet;
+  std::memcpy(&packet, wire_packet.buffer(), sizeof(packet));
+  if (!decode(packet, data)) {
+    return false;
+  }
+  feedback_mode_.store(data.mode);
+  return true;
 }
 
 std::vector<rclcpp::SubscriptionBase::SharedPtr> ProtocolSentry::getSubscriptions(
@@ -95,11 +174,6 @@ std::vector<rclcpp::SubscriptionBase::SharedPtr> ProtocolSentry::getSubscription
         invalid.reference_valid = false;
         this->send(invalid);
     });
-/*   auto sub3 = node->create_subscription<rm_interfaces::msg::ChassisCmd>(
-    "/cmd_chassis",
-    rclcpp::SensorDataQoS(),
-    [this](const rm_interfaces::msg::ChassisCmd::SharedPtr msg) { this->send(*msg); }); */
-  // return {sub1, sub2, sub3};
   return {sub1, sub2};
 }
 
