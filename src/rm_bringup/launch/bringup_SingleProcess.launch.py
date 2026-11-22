@@ -130,9 +130,6 @@ def generate_launch_description():
             ))
         else:
             serial_driver_params = [get_params('serial_driver')]
-            if not launch_params.get('rune', True):
-                serial_driver_params.append({'protocol': 'hero'})
-
             composable_nodes.append(ComposableNode(
                 package='rm_serial_driver',
                 plugin='qd::serial_driver::SerialDriverNode',
