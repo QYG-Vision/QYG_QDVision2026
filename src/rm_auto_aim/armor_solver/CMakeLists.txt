@@ -71,6 +71,9 @@ if(BUILD_TESTING)
   ament_add_gtest(test_solver_motion_switches test/test_solver_motion_switches.cpp)
   target_link_libraries(test_solver_motion_switches ${PROJECT_NAME})
 
+  ament_add_gtest(test_double_armor_yaw test/test_double_armor_yaw.cpp)
+  target_link_libraries(test_double_armor_yaw ${PROJECT_NAME})
+
 endif()
 
 #############

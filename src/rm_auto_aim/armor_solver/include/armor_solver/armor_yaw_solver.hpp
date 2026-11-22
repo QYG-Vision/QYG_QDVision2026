@@ -169,14 +169,23 @@ public:
 
 class DoubleArmor {
 public:
+    /**
+     * @brief 构造相邻两块装甲板的联合朝向代价。
+     * @param armor_msg 按图像从左到右排列的两块装甲板观测。
+     * @param z_to_v_exp 第一块板相对云台的预测 yaw，单位 rad。
+     * @param converter 共享的坐标变换和相机投影器。
+     * @param angle_between_armors 相邻板朝向夹角，单位 rad。
+     */
     explicit DoubleArmor(
         const std::vector<ArmorData>& armor_msg,
         double z_to_v_exp,
-        std::shared_ptr<CoordConverter> converter
+        std::shared_ptr<CoordConverter> converter,
+        double angle_between_armors = M_PI / 2.0
     ):
         armor_datas(armor_msg),
         z_to_v_exp(z_to_v_exp),
-        converter(converter) {};
+        converter(converter),
+        angle_between_armors(angle_between_armors) {};
     ~DoubleArmor() = default;
     double operator()(double x);
 
@@ -184,6 +193,7 @@ public:
     std::vector<ArmorData> armor_datas; // 两块装甲板数据
     const double z_to_v_exp; //EKF预测的装甲板yaw
     std::shared_ptr<CoordConverter> converter;
+    const double angle_between_armors;
 };
 
 class SolveYawPnP {

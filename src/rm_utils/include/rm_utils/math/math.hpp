@@ -1,5 +1,6 @@
 #pragma once
 #include <Eigen/Dense>
+#include <algorithm>
 #include <chrono>
 #include <iostream>
 #include <string>
@@ -45,12 +46,17 @@ T sq(const T& x) {
     return x * x;
 }
 
-// 总是返回 0 ~ pi
+/**
+ * @brief 计算二维向量夹角，并限制反余弦输入以避免浮点舍入导致 NaN。
+ * @param vec1 第一个方向向量。
+ * @param vec2 第二个方向向量。
+ * @return [0, pi] 内的夹角，单位 rad；任一向量为零时返回 0。
+ */
 inline double get_abs_angle(const Eigen::Vector2d& vec1, const Eigen::Vector2d& vec2){
     if (vec1.norm() == 0. || vec2.norm() == 0.) {
         return 0.;
     }
-    return std::acos(vec1.dot(vec2) / (vec1.norm() * vec2.norm()));
+    return std::acos(std::clamp(vec1.dot(vec2) / (vec1.norm() * vec2.norm()), -1.0, 1.0));
 }
 
 // 获取 tar 最近的 cur。获取结果可能不在 -pi 到 pi 之间

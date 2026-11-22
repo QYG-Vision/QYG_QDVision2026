@@ -1,5 +1,7 @@
 #include "armor_solver/armor_yaw_solver.hpp"
 
+#include <algorithm>
+
 namespace qd::auto_aim {
 SolveYawPnP::SolveYawPnP(std::weak_ptr<rclcpp::Node> n): node_(n) {
     converter = std::make_shared<CoordConverter>();
@@ -86,8 +88,6 @@ void SolveYawPnP::solve(
         if (armor.number == tracked_id) {
             // 取地址传入，存入指针
             armor_msg_ptrs.push_back(&armor);
-            ArmorData armor_data(armor);
-            armor_datas.emplace_back(armor_data);
             count++;
         }
     }
@@ -95,6 +95,20 @@ void SolveYawPnP::solve(
     if (count == 0) {
         FYT_WARN("armor_solver", "No tracked armor found in armors_msg");
         return;
+    }
+
+    // 固定左右板对应关系，避免检测输出顺序变化导致相邻板朝向互换。
+    std::sort(armor_msg_ptrs.begin(), armor_msg_ptrs.end(), [](const auto* lhs, const auto* rhs) {
+        double lhs_x = 0.0;
+        double rhs_x = 0.0;
+        for (size_t i = 0; i < lhs->image_points.size(); ++i) {
+            lhs_x += lhs->image_points[i].x;
+            rhs_x += rhs->image_points[i].x;
+        }
+        return lhs_x < rhs_x;
+    });
+    for (const auto* armor : armor_msg_ptrs) {
+        armor_datas.emplace_back(*armor);
     }
 
     double z_to_v_exp = reduced_angle(predict_yaw - converter->gimbal_rpy[2]);
@@ -115,7 +129,7 @@ void SolveYawPnP::solve(
             this->find(z_to_armor_min, z_to_armor_max, single_armor, FIND_ANGLE_ITERATIONS);
         revise_orientation(armor_msg_ptrs[0]->pose.orientation, res.first);
     } else if (count == 2) {
-        DoubleArmor double_armor(armor_datas, z_to_v_exp, converter);
+        DoubleArmor double_armor(armor_datas, z_to_v_exp, converter, angle_between_armors);
         std::pair<double, double> res = this->find(
             -must_not_see_angle,
             +must_not_see_angle - angle_between_armors,
@@ -123,7 +137,7 @@ void SolveYawPnP::solve(
             FIND_ANGLE_ITERATIONS
         );
         revise_orientation(armor_msg_ptrs[0]->pose.orientation, res.first);
-        revise_orientation(armor_msg_ptrs[1]->pose.orientation, res.first + (M_PI / 2));
+        revise_orientation(armor_msg_ptrs[1]->pose.orientation, res.first + angle_between_armors);
     }
 }
 
@@ -304,8 +318,10 @@ double SingleArmor::operator()(double x) {
 
 double DoubleArmor::operator()(double x) {
     double cost = 0.;
-    for (auto& armor: this->armor_datas) {
-        converter->update_projected_points(armor, x);
+    for (size_t i = 0; i < armor_datas.size(); ++i) {
+        auto& armor = armor_datas[i];
+        // 代价计算和最终写回使用相同的相邻板夹角。
+        converter->update_projected_points(armor, x + static_cast<double>(i) * angle_between_armors);
         cost += get_pts_cost(armor.projected_points, armor.pix_points, this->z_to_v_exp);
     }
     return cost;

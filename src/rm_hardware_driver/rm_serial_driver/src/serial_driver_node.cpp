@@ -99,9 +99,12 @@ void SerialDriverNode::listenLoop() {
         init();
     }
 
+    auto last_receive_time = std::chrono::steady_clock::now();
+    auto last_warning_time = last_receive_time - std::chrono::seconds(1);
     while (rclcpp::ok()) {
         rm_interfaces::msg::SerialReceiveData receive_data;
         if (protocol_->receive(receive_data)) {
+            last_receive_time = std::chrono::steady_clock::now();
             // 获取当前 PC 时间和 MCU 时间（转换为秒）
             rclcpp::Time pc_now = this->now();
             rclcpp::Time real_gimbal_time = pc_now; // 默认使用 PC 时间，后续会通过 PLL 同步调整
@@ -177,10 +180,18 @@ void SerialDriverNode::listenLoop() {
 
             heartbeat_->publish();
         } else {
-            auto error_message = protocol_->getErrorMessage();
-            error_message = error_message.empty() ? "unknown" : error_message;
-            FYT_WARN("serial_driver", "Failed to reveive packet! error message :{}", error_message);
-            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            const auto now = std::chrono::steady_clock::now();
+            const auto error_message = protocol_->getErrorMessage();
+            // 分段数据尚未拼成完整帧时继续接收，避免固定休眠造成串口积压。
+            if ((!error_message.empty() || now - last_receive_time >= std::chrono::seconds(1))
+                && now - last_warning_time >= std::chrono::seconds(1)) {
+                FYT_WARN(
+                    "serial_driver", "No valid serial feedback for {:.3f}s; transport status: {}",
+                    std::chrono::duration<double>(now - last_receive_time).count(),
+                    error_message.empty() ? "no transport error reported" : error_message);
+                last_warning_time = now;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
         }
     }
 }
