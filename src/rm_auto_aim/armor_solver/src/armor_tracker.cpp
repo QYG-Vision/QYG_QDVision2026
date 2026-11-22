@@ -65,12 +65,6 @@ void Tracker::init(const Armors::SharedPtr& armors_msg) noexcept {
         tracked_armors_num = ArmorsNum::NORMAL_4;
     }
 
-    if (tracked_armors_num == ArmorsNum::OUTPOST_3) {
-        spin_imm_.set_model_lock(1);
-    } else {
-        spin_imm_.clear_model_lock();
-    }
-
     computeArmorParams();
 }
 
@@ -78,9 +72,6 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
     utils::AutoTimer timer("armor_solver", "Tracker::update");
     // 丢检帧也要推进两个运动模型，避免旧状态配上新时间戳后形成指令平台。
     updateArmorStateEKF(armors_msg);
-
-    const double dt = std::clamp(predict_dt_, 1e-3, 0.2);
-    if (spin_imm_initialized_) spin_imm_.predict(dt);
 
     // EKF predict
     Eigen::VectorXd ekf_prediction = ekf->predict();
@@ -90,7 +81,6 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
 
     // 匹配并更新所有同 id 装甲板（用马氏距离选择对应装甲板）
     bool matched = false;
-    int best_offset_for_imm = 0;
     double best_area = 0;
     Armor best_armor;
     double best_yaw_diff = DBL_MAX;
@@ -155,17 +145,11 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
             best_area = armor.area;
             best_armor = armor;
             best_yaw_diff = min_yaw_diff;
-            best_offset_for_imm = best_offset;
         }
     }
 
     updateTracker(matched);
     if (!matched) {
-        if (spin_imm_initialized_) {
-            target_state(6) = spin_imm_.yaw();
-            target_state(7) = spin_imm_.velocity();
-            ekf->setState(target_state);
-        }
         computeArmorParams();
         return;
     }
@@ -191,10 +175,6 @@ void Tracker::update(const Armors::SharedPtr& armors_msg) noexcept {
         target_state(8) = OUTPOST_RADIUS; // 固定半径
         target_state(9) = 0.0; // 前哨战半径相等，无 dr
     }
-
-    updateSpinIMM(true, best_offset_for_imm);
-    target_state(6) = spin_imm_.yaw();
-    target_state(7) = spin_imm_.velocity();
 
     ekf->setState(target_state);
     computeArmorParams();
@@ -227,21 +207,9 @@ void Tracker::initEKF(const Armor& a) noexcept {
     target_state << xc, 0, yc, 0, zc, 0, yaw, 0, r, 0, 0, 0;
 
     ekf->init(target_state);
-    spin_imm_.reset();
-    spin_imm_.initialize(yaw, 0.0, 0.0);
-    spin_imm_initialized_ = true;
 
     armor_state << xa, 0, ya, 0, za, 0;
     ekf_point->init(armor_state);
-}
-
-void Tracker::updateSpinIMM(bool matched, int armor_offset) noexcept {
-    if (!spin_imm_initialized_ || !matched) return;
-    const int armor_count = static_cast<int>(tracked_armors_num);
-    const double armor_yaw = orientationToYaw(tracked_armor.pose.orientation);
-    const double center_yaw = reduced_angle(
-        armor_yaw - static_cast<double>(armor_offset) * 2.0 * M_PI / armor_count);
-    spin_imm_.update(center_yaw);
 }
 
 /**

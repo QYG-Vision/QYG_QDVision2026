@@ -1,5 +1,7 @@
 #include "armor_solver/armor_tracker.hpp"
 
+#include <cmath>
+
 #include <gtest/gtest.h>
 
 namespace qd::auto_aim {
@@ -79,6 +81,8 @@ namespace {
         }
 
         EXPECT_NEAR(tracker_->target_state(0), initial_target(0) + 3.0 * dt_, 1e-10);
+        EXPECT_NEAR(tracker_->target_state(6), initial_target(6) + 3.0 * 0.2 * dt_, 1e-10);
+        EXPECT_NEAR(tracker_->target_state(7), 0.2, 1e-10);
         EXPECT_NEAR(tracker_->armor_state(0), initial_armor(0) + 3.0 * dt_, 1e-10);
         EXPECT_EQ(tracker_->tracker_state, TrackerState::TEMP_LOST);
     }
@@ -121,6 +125,64 @@ namespace {
         EXPECT_TRUE(tracker_->target_state.isApprox(initial_target, 1e-10));
         EXPECT_TRUE(tracker_->armor_state.isApprox(initial_armor, 1e-10));
         EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+    }
+
+    TEST_F(TrackerPredictionTest, corrects_rotation_from_a_matching_armor) {
+        const double observed_yaw = 0.1;
+        const double predicted_yaw = tracker_->target_state(6) + tracker_->target_state(7) * dt_;
+        auto& armor = initial_frame_->armors.front();
+        armor.pose.orientation.z = std::sin(observed_yaw / 2.0);
+        armor.pose.orientation.w = std::cos(observed_yaw / 2.0);
+        armor.pose.position.x = tracker_->target_state(0) + tracker_->target_state(1) * dt_
+            - tracker_->target_state(8) * std::cos(observed_yaw);
+        armor.pose.position.y = tracker_->target_state(2) + tracker_->target_state(3) * dt_
+            - tracker_->target_state(8) * std::sin(observed_yaw);
+
+        tracker_->update(initial_frame_);
+
+        EXPECT_TRUE(tracker_->target_state.allFinite());
+        EXPECT_GT(tracker_->target_state(6), predicted_yaw);
+        EXPECT_LT(tracker_->target_state(6), observed_yaw);
+        EXPECT_GT(tracker_->target_state(7), 0.2);
+        EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+
+        const double corrected_yaw = tracker_->target_state(6);
+        const double corrected_velocity = tracker_->target_state(7);
+        tracker_->update(std::make_shared<Tracker::Armors>());
+
+        EXPECT_NEAR(tracker_->target_state(6), corrected_yaw + corrected_velocity * dt_, 1e-10);
+        EXPECT_NEAR(tracker_->target_state(7), corrected_velocity, 1e-10);
+    }
+
+    TEST_F(TrackerPredictionTest, preserves_outpost_constraints_and_subsequent_prediction) {
+        initial_frame_->armors.front().number = "outpost";
+        for (const double direction: { -1.0, 1.0 }) {
+            tracker_->init(initial_frame_);
+            tracker_->tracker_state = TrackerState::TRACKING;
+            // 使预测 yaw 与观测一致，单独检查前哨站角速度和半径约束。
+            tracker_->target_state(7) = direction * 3.0;
+            tracker_->target_state(6) = -tracker_->target_state(7) * dt_;
+            tracker_->ekf->setState(tracker_->target_state);
+
+            tracker_->update(initial_frame_);
+
+            EXPECT_EQ(tracker_->tracked_armors_num, ArmorsNum::OUTPOST_3);
+            EXPECT_NEAR(tracker_->target_state(7), direction * OUTPOST_SPEED, 1e-10);
+            EXPECT_DOUBLE_EQ(tracker_->target_state(8), OUTPOST_RADIUS);
+            EXPECT_DOUBLE_EQ(tracker_->target_state(9), 0.0);
+            EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
+            for (const double radius: tracker_->radius_list_) {
+                EXPECT_DOUBLE_EQ(radius, OUTPOST_RADIUS);
+            }
+
+            const double corrected_yaw = tracker_->target_state(6);
+            tracker_->update(std::make_shared<Tracker::Armors>());
+
+            EXPECT_NEAR(
+                tracker_->target_state(6), corrected_yaw + direction * OUTPOST_SPEED * dt_, 1e-10
+            );
+            EXPECT_NEAR(tracker_->target_state(7), direction * OUTPOST_SPEED, 1e-10);
+        }
     }
 
 } // namespace
