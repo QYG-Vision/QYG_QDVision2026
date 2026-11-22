@@ -36,7 +36,6 @@
 #include <Eigen/Eigen>
 // project
 #include "armor_solver/motion_model.hpp"
-#include "armor_solver/spin_imm.hpp"
 #include "rm_interfaces/msg/armors.hpp"
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/math/extended_kalman_filter.hpp"
@@ -68,9 +67,6 @@ public:
      */
     void update(const Armors::SharedPtr& armors_msg) noexcept;
 
-    /** @brief 设置当前帧与上一帧之间的滤波时间间隔。 */
-    void setPredictDt(double dt) noexcept { predict_dt_ = dt; }
-
     TrackerState tracker_state;
 
     std::unique_ptr<RobotStateEKF> ekf;
@@ -98,8 +94,6 @@ private:
 
     void updateArmorStateEKF(const Armors::SharedPtr& armors_msg) noexcept;
 
-    void updateSpinIMM(bool matched, int armor_offset) noexcept;
-
     void computeArmorParams() noexcept;
 
     double orientationToYaw(const geometry_msgs::msg::Quaternion& q) noexcept;
@@ -111,10 +105,6 @@ private:
 
     int detect_count_;
     int lost_count_;
-    double predict_dt_ = 0.005;
-
-    SpinIMM spin_imm_;
-    bool spin_imm_initialized_ = false;
 
     // 状态机
     qd::utils::VisionStateMachine& state_machine_;

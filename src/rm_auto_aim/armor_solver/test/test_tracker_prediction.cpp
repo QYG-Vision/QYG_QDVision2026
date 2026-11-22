@@ -1,5 +1,7 @@
 #include "armor_solver/armor_tracker.hpp"
 
+#include <cmath>
+
 #include <gtest/gtest.h>
 
 namespace qd::auto_aim {
@@ -103,6 +105,25 @@ namespace {
         }
         tracker_->update(missing_frame);
         EXPECT_EQ(tracker_->tracker_state, TrackerState::LOST);
+    }
+
+    TEST_F(TrackerPredictionTest, preserves_ekf_rotation_when_matching_a_rotating_armor) {
+        const double expected_yaw = tracker_->target_state(6) + 0.2 * dt_;
+        const double expected_x = tracker_->target_state(0) + dt_;
+        const double expected_y = tracker_->target_state(2) - 0.5 * dt_;
+        const double radius = tracker_->target_state(8);
+        auto& armor = initial_frame_->armors.front();
+        armor.pose.position.x = expected_x - radius * std::cos(expected_yaw);
+        armor.pose.position.y = expected_y - radius * std::sin(expected_yaw);
+        tf2::Quaternion orientation;
+        orientation.setRPY(0.0, 0.0, expected_yaw);
+        armor.pose.orientation = tf2::toMsg(orientation);
+
+        tracker_->update(initial_frame_);
+
+        EXPECT_NEAR(tracker_->target_state(6), expected_yaw, 1e-10);
+        EXPECT_NEAR(tracker_->target_state(7), 0.2, 1e-10);
+        EXPECT_EQ(tracker_->tracker_state, TrackerState::TRACKING);
     }
 
     TEST_F(TrackerPredictionTest, still_updates_a_stationary_matching_armor) {
