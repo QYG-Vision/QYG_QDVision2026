@@ -58,6 +58,44 @@ TEST_F(SolverMotionSwitches, plansWithoutFeedback) {
     EXPECT_NEAR(command.yaw, 0, 1e-8);
     EXPECT_NEAR(command.pitch, 0, 1e-8);
     EXPECT_TRUE(command.fire_advice);
+    const auto& debug = solver_->get_mpc_debug();
+    EXPECT_TRUE(debug.reference_valid);
+    EXPECT_EQ(debug.selected_armor_index, 0);
+    EXPECT_EQ(debug.armor_indices.size(), 100U);
+    EXPECT_EQ(debug.yaw.positions.size(), 100U);
+    EXPECT_DOUBLE_EQ(debug.time_offsets[50], 0.0);
+}
+
+TEST_F(SolverMotionSwitches, keepsSelectionAndTrajectoryWhenMpcOutputIsRejected) {
+    rclcpp::NodeOptions options;
+    options.parameter_overrides({
+        rclcpp::Parameter("solver.use_ballistic_compensation", false),
+        rclcpp::Parameter("solver.compensator_type", "ideal"),
+        rclcpp::Parameter("solver.mpc.yaw.max_acceleration", 0.001)});
+    auto diagnostic_node = std::make_shared<rclcpp::Node>("solver_debug_test", options);
+    diagnostic_node->declare_parameter("gimble_frame", "gimbal_link");
+    Solver diagnostic_solver(diagnostic_node);
+    target_.yaw = 0.5;
+    target_.v_yaw = 3.0;
+    const auto command = diagnostic_solver.solve(target_, now_, buffer_);
+    ASSERT_FALSE(command.reference_valid);
+    EXPECT_EQ(command.reference_status, "invalid_mpc_output");
+    const auto& debug = diagnostic_solver.get_mpc_debug();
+    EXPECT_EQ(debug.status, command.reference_status);
+    EXPECT_FALSE(debug.reference_valid);
+    ASSERT_EQ(debug.armor_indices.size(), 100U);
+    EXPECT_EQ(debug.selected_armor_index, debug.armor_indices[50]);
+    EXPECT_DOUBLE_EQ(debug.reference_yaw, command.exp_yaw);
+    EXPECT_TRUE(debug.yaw.attempted);
+    EXPECT_EQ(debug.yaw.status, "acceleration_limit");
+    EXPECT_GT(debug.yaw.acceleration_excess, debug.yaw.acceleration_tolerance);
+    EXPECT_EQ(debug.yaw.positions.size(), 100U);
+    EXPECT_NEAR(debug.yaw.positions[50], debug.yaw.position, 1e-12);
+    target_.tracking = false;
+    diagnostic_solver.solve(target_, now_, buffer_);
+    EXPECT_EQ(diagnostic_solver.get_mpc_debug().selected_armor_index, -1);
+    EXPECT_TRUE(diagnostic_solver.get_mpc_debug().armor_indices.empty());
+    EXPECT_FALSE(diagnostic_solver.get_mpc_debug().yaw.attempted);
 }
 
 TEST_F(SolverMotionSwitches, usesWholeTargetInsteadOfTranslationArmor) {

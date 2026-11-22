@@ -108,6 +108,8 @@ ArmorSolverNode::ArmorSolverNode(const rclcpp::NodeOptions& options):
         "armor_solver/ballistic_debug",
         rclcpp::SensorDataQoS()
     );
+    mpc_debug_pub_ = this->create_publisher<rm_interfaces::msg::MpcDebug>(
+        "armor_solver/mpc_debug", rclcpp::SensorDataQoS());
     result_img_pub_ = image_transport::create_publisher(this, "armor_solver/result_img");
     result_image_publish_thread_ = std::thread(&ArmorSolverNode::resultImagePublishLoop, this);
 
@@ -239,6 +241,18 @@ void ArmorSolverNode::timerCallback() {
             control_msg.reference_status = "solver_exception";
             FYT_ERROR("armor_solver", "Something went wrong in solver!");
         }
+    }
+
+    if (debug_mode_) {
+        auto debug = armor_target_.tracking ? solver_->get_mpc_debug()
+                                           : rm_interfaces::msg::MpcDebug {};
+        debug.header.frame_id = armor_target_.header.frame_id;
+        if (!armor_target_.tracking) debug.header.stamp = this->now();
+        debug.target_header = armor_target_.header;
+        debug.tracking = armor_target_.tracking;
+        debug.reference_valid = control_msg.reference_valid;
+        debug.status = control_msg.reference_status;
+        mpc_debug_pub_->publish(std::move(debug));
     }
 
     publishMarkers(armor_target_, control_msg);

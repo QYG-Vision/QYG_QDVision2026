@@ -72,10 +72,14 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     target_timeout_ = node->declare_parameter("solver.mpc.target_timeout", 0.3);
     mpc_config_.max_acceleration =
         node->declare_parameter("solver.mpc.yaw.max_acceleration", 50.0);
+    mpc_config_.acceleration_tolerance =
+        node->declare_parameter("solver.mpc.yaw.acceleration_tolerance", 1e-6);
     yaw_mpc_ = std::make_unique<AxisMpc>(mpc_config_);
     auto pitch_config = mpc_config_;
     pitch_config.max_acceleration =
         node->declare_parameter("solver.mpc.pitch.max_acceleration", 100.0);
+    pitch_config.acceleration_tolerance =
+        node->declare_parameter("solver.mpc.pitch.acceleration_tolerance", 1e-6);
     pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
 
     node.reset();
@@ -95,6 +99,15 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
     std::shared_ptr<tf2_ros::Buffer> tf2_buffer_
 ) {
     ballistic_debug_.reset();
+    mpc_debug_ = rm_interfaces::msg::MpcDebug {};
+    mpc_debug_.header = target.header;
+    mpc_debug_.header.stamp = current_time;
+    mpc_debug_.target_header = target.header;
+    mpc_debug_.tracking = target.tracking;
+    mpc_debug_.target_id = target.id;
+    mpc_debug_.target_yaw = target.yaw;
+    mpc_debug_.target_v_yaw = target.v_yaw;
+    mpc_debug_.status = "invalid_target";
     // Get newest parameters
     // 更新参数
     try {
@@ -167,7 +180,13 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         gimbal_cmd.reference_valid = false;
         gimbal_cmd.fire_advice = false;
     }
+    mpc_debug_.reference_valid = gimbal_cmd.reference_valid;
+    mpc_debug_.status = gimbal_cmd.reference_status;
     return gimbal_cmd;
+}
+
+const rm_interfaces::msg::MpcDebug& Solver::get_mpc_debug() const noexcept {
+    return mpc_debug_;
 }
 
 std::optional<BallisticDebugData> Solver::get_ballistic_debug() const noexcept {

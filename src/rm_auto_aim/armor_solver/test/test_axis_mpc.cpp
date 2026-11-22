@@ -47,6 +47,68 @@ TEST(AxisMpc, unwrapsYawAcrossSeam) {
     EXPECT_NEAR(unwrap_radians(M_PI - 0.01, -M_PI + 0.01), -M_PI - 0.01, 1e-14);
 }
 
+TEST(AxisMpc, acceptsSwitchingTrajectoryOnlyWithinConfiguredAccelerationTolerance) {
+    AxisMpc::Config strict_config;
+    strict_config.max_acceleration = 45.0;
+    strict_config.max_iterations = 30;
+    auto tolerant_config = strict_config;
+    tolerant_config.acceleration_tolerance = 1.0;
+    AxisMpc strict(strict_config);
+    AxisMpc tolerant(tolerant_config);
+    int newly_accepted = 0;
+    // 平移切板时刻，覆盖切板前的加速和切板后的制动，并保留求解器工作状态。
+    for (int switch_index = 80; switch_index >= 20; --switch_index) {
+        std::vector<double> reference(100);
+        const std::vector<double> velocities(100, -0.4);
+        for (int k = 0; k < 100; ++k) {
+            reference[k] = -0.4 * (k - 50) * 0.01 + (k >= switch_index ? 0.314 : 0.0);
+        }
+        const auto strict_sample = strict.plan(reference, &velocities);
+        const auto tolerant_sample = tolerant.plan(reference, &velocities);
+        const auto& diagnostic = strict.get_debug();
+        EXPECT_TRUE(diagnostic.attempted);
+        EXPECT_EQ(diagnostic.accepted, strict_sample.has_value());
+        EXPECT_EQ(diagnostic.positions.size(), 100U);
+        EXPECT_EQ(diagnostic.accelerations.size(), 99U);
+        if (!strict_sample) {
+            EXPECT_EQ(diagnostic.status, "acceleration_limit");
+            EXPECT_GT(std::abs(diagnostic.output.acceleration),
+                      strict_config.max_acceleration + strict_config.acceleration_tolerance);
+        }
+        if (strict_sample) {
+            ASSERT_TRUE(tolerant_sample);
+            EXPECT_DOUBLE_EQ(strict_sample->position, tolerant_sample->position);
+            EXPECT_DOUBLE_EQ(strict_sample->velocity, tolerant_sample->velocity);
+            EXPECT_DOUBLE_EQ(strict_sample->acceleration, tolerant_sample->acceleration);
+        } else if (tolerant_sample) {
+            ++newly_accepted;
+            EXPECT_GT(std::abs(tolerant_sample->acceleration),
+                      strict_config.max_acceleration + strict_config.acceleration_tolerance);
+            EXPECT_LE(std::abs(tolerant_sample->acceleration),
+                      tolerant_config.max_acceleration + tolerant_config.acceleration_tolerance);
+        }
+    }
+    EXPECT_GT(newly_accepted, 0);
+    EXPECT_FALSE(strict.plan({}));
+    EXPECT_FALSE(strict.get_debug().attempted);
+    EXPECT_TRUE(strict.get_debug().positions.empty());
+    EXPECT_EQ(strict.get_debug().status, "invalid_input");
+}
+
+TEST(AxisMpc, validatesAccelerationTolerance) {
+    for (const double tolerance : {-1.0, std::numeric_limits<double>::infinity(),
+                                   std::numeric_limits<double>::quiet_NaN()}) {
+        AxisMpc::Config config;
+        config.acceleration_tolerance = tolerance;
+        AxisMpc invalid(config);
+        EXPECT_FALSE(invalid.plan(std::vector<double>(100, 0.0)));
+    }
+    AxisMpc::Config config;
+    config.acceleration_tolerance = 0.0;
+    AxisMpc exact(config);
+    EXPECT_TRUE(exact.plan(std::vector<double>(100, 0.0)));
+}
+
 TEST(AxisMpc, rejectsBadInputAndConfiguration) {
     AxisMpc::Config config;
     AxisMpc mpc(config);

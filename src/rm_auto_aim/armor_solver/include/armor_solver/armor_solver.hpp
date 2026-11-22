@@ -35,6 +35,7 @@
 #include "armor_solver/axis_mpc.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
+#include "rm_interfaces/msg/mpc_debug.hpp"
 #include "rm_interfaces/msg/target.hpp"
 #include "rm_utils/logger/log.hpp"
 #include "rm_utils/math/manual_compensator.hpp"
@@ -143,6 +144,13 @@ public:
     std::optional<BallisticDebugData> get_ballistic_debug() const noexcept;
 
     /**
+     * @brief 读取本轮选板参考及两轴求解诊断，包含被拒绝的规划。
+     * @return 本实例持有的诊断引用，下次 solve 时覆盖。
+     * @note 调用方须与 solve 共用 solver_state_mutex_。
+     */
+    const rm_interfaces::msg::MpcDebug& get_mpc_debug() const noexcept;
+
+    /**
      * @brief 接收一条新的弹速样本并更新弹道模型。
      * @param raw_bullet_speed 电控上报的弹速，单位米每秒。
      * @note 调用方须与 solve() 共用 solver_state_mutex_ 保护求解器状态。
@@ -150,7 +158,7 @@ public:
     void update_bullet_speed(double raw_bullet_speed);
 
     /**
-     * @brief 缓存 V2 姿态/角速度及其采样时间，供 MPC 初始化。
+     * @brief 缓存 V2 姿态/角速度及其采样时间，供规划误差诊断。
      * @param feedback odom 中的绝对姿态及姿态角速度，rad、rad/s，Pitch 向下为正。
      * @note 与 solve() 共用 solver_state_mutex_。
      */
@@ -172,6 +180,7 @@ private:
     std::unique_ptr<AxisMpc> yaw_mpc_;
     std::unique_ptr<AxisMpc> pitch_mpc_;
     AxisMpc::Config mpc_config_;
+    rm_interfaces::msg::MpcDebug mpc_debug_;
     std::optional<rm_interfaces::msg::SerialReceiveData> feedback_;
     bool mpc_enabled_ = true;
     double fire_thresh_ = 0.003; // 济瞄规划误差阈值，rad。

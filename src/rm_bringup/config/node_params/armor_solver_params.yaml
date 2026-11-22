@@ -59,8 +59,10 @@
         target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
           max_acceleration: 50.0 # rad/s²
+          acceleration_tolerance: 0.000001 # 输出验收允许的超限误差，rad/s²；不改变求解约束，重启生效
         pitch:
           max_acceleration: 100.0 # rad/s²
+          acceleration_tolerance: 0.000001 # 输出验收允许的超限误差，rad/s²；不改变求解约束，重启生效
 
       # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿°, yaw轴补偿°"]
       # 原弧度值换成配置角度：degree = rad × 180 / π；读取时转回 rad = degree × π / 180

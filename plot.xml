@@ -109,6 +109,58 @@
     </DockSplitter>
    </Container>
   </Tab>
+  <Tab tab_name="mpc_debug" containers="1">
+   <Container>
+    <DockSplitter count="6" sizes="0.166667;0.166667;0.166667;0.166667;0.166667;0.166667" orientation="-">
+     <DockArea name="selection">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/selected_armor_index"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/tracking"/>
+       <curve color="#2ca02c" name="/armor_solver/mpc_debug/reference_valid"/>
+      </plot>
+     </DockArea>
+     <DockArea name="yaw_reference_and_plan">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/reference_yaw"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/yaw/position"/>
+      </plot>
+     </DockArea>
+     <DockArea name="yaw_acceleration">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/yaw/acceleration"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/yaw/max_acceleration"/>
+       <curve color="#2ca02c" name="/armor_solver/mpc_debug/yaw/acceleration_excess"/>
+      </plot>
+     </DockArea>
+     <DockArea name="solver_status">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/yaw/accepted"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/yaw/converged"/>
+       <curve color="#2ca02c" name="/armor_solver/mpc_debug/pitch/accepted"/>
+       <curve color="#d62728" name="/armor_solver/mpc_debug/pitch/converged"/>
+      </plot>
+     </DockArea>
+     <DockArea name="constraint_residual">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/yaw/primal_residual_input"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/pitch/primal_residual_input"/>
+      </plot>
+     </DockArea>
+     <DockArea name="solve_time">
+      <plot flip_y="false" flip_x="false" line_width="1.0" mode="TimeSeries">
+       <limitY/>
+       <curve color="#1f77b4" name="/armor_solver/mpc_debug/yaw/solve_time_ms"/>
+       <curve color="#ff7f0e" name="/armor_solver/mpc_debug/pitch/solve_time_ms"/>
+      </plot>
+     </DockArea>
+    </DockSplitter>
+   </Container>
+  </Tab>
   <currentTabIndex index="0"/>
  </tabbed_widget>
  <use_relative_time_offset enabled="1"/>
@@ -128,6 +180,7 @@
      <topic name="/armor_solver/heartbeat"/>
      <topic name="/armor_solver/measurement"/>
      <topic name="/armor_solver/target"/>
+     <topic name="/armor_solver/mpc_debug"/>
      <topic name="/serial/receive"/>
     </topics>
    </foxglove_client>
@@ -138,6 +191,7 @@
     <topics>
      <topic name="/armor_solver/measurement"/>
      <topic name="/armor_solver/target"/>
+     <topic name="/armor_solver/mpc_debug"/>
     </topics>
    </websocket_client>
   </plugin>

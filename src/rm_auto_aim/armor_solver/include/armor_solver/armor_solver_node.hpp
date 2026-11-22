@@ -140,6 +140,7 @@ private:
     rclcpp::Publisher<rm_interfaces::msg::Armors>::SharedPtr armors_pub_;
     rclcpp::Publisher<rm_interfaces::msg::Target>::SharedPtr target_pub_;
     rclcpp::Publisher<rm_interfaces::msg::GimbalCmd>::SharedPtr gimbal_pub_;
+    rclcpp::Publisher<rm_interfaces::msg::MpcDebug>::SharedPtr mpc_debug_pub_;
     rclcpp::Publisher<rm_interfaces::msg::BallisticDebug>::SharedPtr ballistic_debug_pub_;
     image_transport::Publisher result_img_pub_;
 
