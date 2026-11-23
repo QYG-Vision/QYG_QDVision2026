@@ -1,0 +1,3 @@
+[submodule "QYG-open-cv-calibration"]
+	path = QYG-open-cv-calibration
+	url = https://github.com/QYG-Vision/QYG-open-cv-calibration.git
