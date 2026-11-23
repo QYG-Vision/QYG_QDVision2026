@@ -54,12 +54,12 @@
         velocity_weight: 0.0
         acceleration_weight: 1.0
         fire_thresh_min: 0.00        # 第52点两轴规划误差范数下限，rad，含边界
-        fire_thresh: 0.008          # 同济 Planner：第52点两轴规划误差范数，rad
+        fire_thresh: 0.03          # 同济 Planner：第52点两轴规划误差范数，rad
         max_iterations: 100
         feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
         target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
-          max_acceleration: 5.0 # rad/s²
+          max_acceleration: 50.0 # rad/s²
         pitch:
           max_acceleration: 100.0 # rad/s²
 
