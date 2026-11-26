@@ -1,0 +1,16 @@
+# 由 rm.service 使用；日常开发仍使用 docker-compose.yaml。
+services:
+  rv_devel:
+    command: ["bash", "/ros_ws/src/rm_upstart/start_vision.sh"]
+    init: true
+    stdin_open: false
+    tty: false
+    # 由 systemd 统一重启，避免两个管理器同时拉起容器。
+    restart: "no"
+    stop_signal: SIGINT
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
