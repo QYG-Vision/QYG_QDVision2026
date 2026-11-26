@@ -134,72 +134,30 @@ ros2 launch rm_bringup bringup_SingleProcess.launch.py
 
 ## 四、自启动
 
-### Docker
+使用宿主机的 `rm.service` 管理 Docker 自瞄容器。开机等待 Docker 和网络就绪，
+容器内自动加载 ROS 环境并运行 `bringup_SingleProcess.launch.py`；程序退出后由
+systemd 间隔 10 秒重启。启动参数沿用 `src/rm_bringup/config/launch_params.yaml`。
 
-注释`docker-compose.yaml`里的`command`
-
-修改前
-```bash
-    command: bash
-    # command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml # foxglove 调试
-    # command: bash -c "source /ros_ws/src/rm_upstart/rm_watch_dog.sh" # 自启动
-```
-
-修改后
-```bash
-    # command: bash
-    # command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml # foxglove 调试
-    command: bash -c "source /ros_ws/src/rm_upstart/rm_watch_dog.sh" # 自启动
-```
-
-### Local
-
-- 编译程序后，进入rm_upstart文件夹
+先在容器中完成编译并确认能手动运行，再停止手动启动的自瞄。在**小电脑宿主机的仓库根目录**执行一次：
 
 ```bash
-cd rm_upstart
+sudo bash src/rm_upstart/register_service.sh
 ```
 
-- 修改**rm_watch_dog.sh**中的`NAMESPACE`（ros命名空间）、`NODE_NAMES`（需要看门狗监控的节点）和`WORKING_DIR` （代码路径）
-
-- 注册服务
-  
-```bash
-sudo chmod +x ./register_service.sh
-sudo ./register_service.sh
-
-# 正常时有如下输出
-# Creating systemd service file at /etc/systemd/system/rm.service...
-# Reloading systemd daemon...
-# Enabling service rm.service...
-# Starting service rm.service...
-# Service rm.service has been registered and started.
-```
-
-- 查看程序状态
+注册脚本自动识别仓库绝对路径和当前用户，并立即启用、启动服务。
+首次启动会按 `docker-compose.yaml` + `docker-compose.autostart.yaml` 重建 `rv_devel_`，
+使用本地已有镜像，不自动编译或下载。容器内临时安装的依赖应先写入镜像；挂载的工作区会保留。
 
 ```bash
-systemctl status rm
+systemctl status rm.service                # 查看状态
+journalctl -u rm.service -f                # 查看实时输出
+sudo systemctl stop rm.service            # 临时停止，本次开机不再自动重启
+sudo systemctl start rm.service           # 再次启动
+sudo systemctl disable --now rm.service   # 停止并取消开机自启
 ```
 
-- 查看终端输出
-
-```
-查看screen.output或qd2026-log下的日志
-```  
-
-- 关闭程序
-
-```bash
-systemctl stop rm
-```
-
-- 取消自启动
-
-```bash
-systemctl disable rm
-```
-
+用户须具有 Docker 权限。恢复手动启动、首次编译和重启验收步骤见
+[开机自启动说明 - Lonesome George](docs/开机自启动说明-Lonesome-George.md)。不要在容器内运行注册脚本。
 
 ## 开源许可证
 

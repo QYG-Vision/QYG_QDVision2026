@@ -35,7 +35,7 @@ services:
     # 启动命令 (对应最后那一串)
     command: bash
     # command: ros2 launch foxglove_bridge foxglove_bridge_launch.xml # foxglove 调试
-    # command: bash -c "source /ros_ws/src/rm_upstart/rm_watch_dog.sh" # 自启动
+    # 开机自启由 docker-compose.autostart.yaml 覆盖，注册方法见 docs/开机自启动说明-Lonesome-George.md。
     
     # 重启策略 (推荐加上，比如开机自启或崩溃重启)
     restart: unless-stopped

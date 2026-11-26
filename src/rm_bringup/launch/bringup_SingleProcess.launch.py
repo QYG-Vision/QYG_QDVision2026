@@ -3,7 +3,7 @@ import sys
 import yaml
 from ament_index_python.packages import get_package_share_directory
 from launch.substitutions import Command
-from launch.actions import SetEnvironmentVariable
+from launch.actions import SetEnvironmentVariable, Shutdown
 from launch import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
@@ -196,6 +196,8 @@ def generate_launch_description():
         output='both',
         emulate_tty=True,
         ros_arguments=['--ros-args', '--log-level', 'info'],
+        # 主进程退出时同时关闭桥接等辅助节点，让外部服务管理器能够重启自瞄。
+        on_exit=[Shutdown(reason='rm_container exited')],
     )
 
     # 环境变量
