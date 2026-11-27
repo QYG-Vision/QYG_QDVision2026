@@ -59,7 +59,8 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 
   find_package(ament_cmake_gtest REQUIRED)
-  ament_add_gtest(test_axis_mpc test/test_axis_mpc.cpp src/axis_mpc.cpp)
+  ament_add_gtest(test_axis_mpc test/test_axis_mpc.cpp src/axis_mpc.cpp
+    src/plate_selector.cpp src/handoff_planner.cpp)
   target_include_directories(test_axis_mpc PRIVATE include)
   target_link_libraries(test_axis_mpc Eigen3::Eigen armor_tinympc)
   ament_add_gtest(test_bullet_speed_state test/test_bullet_speed_state.cpp)
@@ -70,6 +71,11 @@ if(BUILD_TESTING)
 
   ament_add_gtest(test_solver_motion_switches test/test_solver_motion_switches.cpp)
   target_link_libraries(test_solver_motion_switches ${PROJECT_NAME})
+
+  add_executable(test_plate_selector test/test_plate_selector.cpp
+    src/plate_selector.cpp src/handoff_planner.cpp)
+  target_include_directories(test_plate_selector PRIVATE include)
+  add_test(NAME test_plate_selector COMMAND test_plate_selector)
 
 endif()
 

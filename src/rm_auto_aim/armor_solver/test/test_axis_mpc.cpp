@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "armor_solver/axis_mpc.hpp"
+#include "armor_solver/handoff_planner.hpp"
 #include "gtest/gtest.h"
 #include "tiny_api.hpp"
 
@@ -58,6 +59,42 @@ TEST(AxisMpc, rejectsBadInputAndConfiguration) {
     config.dt = 0.0;
     AxisMpc invalid(config);
     EXPECT_FALSE(invalid.plan(std::vector<double>(config.horizon, 0.0)));
+}
+
+TEST(AxisMpc, future_handoff_changes_output_before_current_plate_leaves) {
+    PlateSelectionConfig selection;
+    selection.max_acceleration = { 15.0, 100.0 };
+    HandoffPlanner planner(selection, {});
+    std::vector<PlateTrajectory> trajectories(2);
+    for (size_t plate = 0; plate < trajectories.size(); ++plate) {
+        for (int k = -52; k <= 52; ++k) {
+            PlateSelectionSample sample;
+            sample.angle[0] = plate == 0 ? 0.0 : 0.03;
+            sample.facing_angle = (plate == 0 ? 0.6 : -0.6) + 3.0 * k * 0.01;
+            sample.horizontal_distance = 5.0;
+            trajectories[plate].samples.push_back(sample);
+        }
+    }
+    const auto plan = planner.plan(trajectories, {}, 1.0);
+    ASSERT_TRUE(plan);
+    ASSERT_EQ(plan->next_plate, 1);
+    ASSERT_TRUE(plan->departure_time);
+    EXPECT_LT(*plan->departure_time, 1.14);
+    AxisMpc::Config config;
+    config.max_acceleration = 15.0;
+    config.max_iterations = 100;
+    AxisMpc with_handoff(config), single_plate(config);
+    std::vector<double> reference, velocity;
+    for (const auto& sample: plan->references) {
+        reference.push_back(sample.motion.angle[0]);
+        velocity.push_back(sample.motion.velocity[0]);
+    }
+    const auto changed = with_handoff.plan(reference, &velocity);
+    const auto baseline = single_plate.plan(std::vector<double>(100, 0.0));
+    ASSERT_TRUE(changed);
+    ASSERT_TRUE(baseline);
+    EXPECT_GT(changed->acceleration, baseline->acceleration + 0.1);
+    EXPECT_FALSE(planner.fire_target(*plan, trajectories, {}));
 }
 } // namespace qd::auto_aim
 

@@ -56,12 +56,28 @@
         fire_thresh_min: 0.00        # 第52点两轴规划误差范数下限，rad，含边界
         fire_thresh: 0.03          # 同济 Planner：第52点两轴规划误差范数，rad
         max_iterations: 100
-        feedback_timeout: 0.1       # 兼容旧参数；济瞄规划路径不以反馈年龄阻断输出
+        feedback_timeout: 0.1       # 可达选板要求反馈年龄不超过此值，s
         target_timeout: 0.3         # 兼容旧参数；目标有效性由 tracking 判定
         yaw:
           max_acceleration: 15.0 # rad/s²
         pitch:
           max_acceleration: 100.0 # rad/s²
+
+      # 加速度模型下的预测选板；不限制最大角速度，参数为待回放/实机调整的试验值。
+      selection:
+        policy: acceleration_reachable # nearest_distance 可恢复逐点最近板策略
+        dt: 0.01                       # 评估步长，固定 10 ms
+        horizon: 0.50                  # 命令参考时刻之后的评估时长，s，最大 2 s
+        capture_deadline: 0.30          # 最迟允许对准时间，s
+        hold_time: 0.10                 # 最短连续可攻击时长，s
+        angle_tolerance: 0.02           # 当前两轴各自允许的对准误差，rad
+        velocity_tolerance: 0.10        # 当前两轴各自允许的角速度误差，rad/s
+        max_facing_angle_deg: 60.0      # 预测命中时板面偏离正面中心的最大夹角，deg
+        switch_improvement: 0.20        # 捕获评分或未出发接管时间的最小改善比例
+        switch_hold_time: 0.05          # 改善持续时间，s；已出发转移保持接管目标
+        handoff:
+          max_transfer_time: 0.30       # 单次板间转移的最长时间，s
+          window_margin: 0.02           # 离开当前窗口及下一板窗口边缘的余量，s
 
       # ["距离下限, 距离上限, 高度下限, 高度上限, pitch轴补偿°, yaw轴补偿°"]
       # 原弧度值换成配置角度：degree = rad × 180 / π；读取时转回 rad = degree × π / 180

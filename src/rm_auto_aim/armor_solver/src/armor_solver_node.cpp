@@ -666,6 +666,7 @@ bool ArmorSolverNode::processArmors(
 
     // Update tracker
     if (tracker_->tracker_state == TrackerState::LOST) {
+        solver_->reset_selection();
         //对所有装甲板进行三分法求yaw
         if (solveYawPnP_) {
             solveYawPnP_
@@ -679,6 +680,7 @@ bool ArmorSolverNode::processArmors(
         dt_ = (time - last_time_).seconds();
 
         if (dt_ > filter_reset_dt_thres_) {
+            solver_->reset_selection();
             FYT_WARN(
                 "armor_solver",
                 "dt {:.3f}s > {:.3f}s, reset tracker EKF",
@@ -784,6 +786,9 @@ bool ArmorSolverNode::processArmors(
 
         // NIS chi-square consistency test
         target_msg.nis = tracker_->ekf->getNIS();
+    }
+    if (!target_msg.tracking) {
+        solver_->reset_selection();
     }
     armor_target_ = target_msg;
     target_pub_->publish(std::make_unique<rm_interfaces::msg::Target>(std::move(target_msg)));

@@ -33,6 +33,8 @@
 // project
 #include "armor_solver/bullet_speed_state.hpp"
 #include "armor_solver/axis_mpc.hpp"
+#include "armor_solver/handoff_planner.hpp"
+#include "armor_solver/plate_selector.hpp"
 #include "rm_interfaces/msg/serial_receive_data.hpp"
 #include "rm_interfaces/msg/gimbal_cmd.hpp"
 #include "rm_interfaces/msg/target.hpp"
@@ -150,18 +152,24 @@ public:
     void update_bullet_speed(double raw_bullet_speed);
 
     /**
-     * @brief 缓存 V2 姿态/角速度及其采样时间，供 MPC 初始化。
+     * @brief 缓存 V2 姿态/角速度及其采样时间，供选板评估和误差诊断。
      * @param feedback odom 中的绝对姿态及姿态角速度，rad、rad/s，Pitch 向下为正。
      * @note 与 solve() 共用 solver_state_mutex_。
      */
     void update_feedback(const rm_interfaces::msg::SerialReceiveData& feedback);
+
+    /**
+     * @brief 在跟踪丢失或重建时清除选板状态。
+     * @note 调用方须与 solve() 共用 solver_state_mutex_。
+     */
+    void reset_selection();
 
     // 可视化用的
     std::vector<std::pair<double, double>> getTrajectory() const noexcept;
 
 private:
     /**
-     * @brief 按济瞄最近板规则生成整车参考并求解两轴 MPC。
+     * @brief 按配置选择最近板或加速度可达板并求解两轴 MPC。
      * @param target 当前跟踪目标，包含坐标系和采样时间。
      * @param now 本轮求解的 ROS 时间。
      * @param command 写入同一规划时刻的角度、速度、加速度及有效位。
@@ -169,6 +177,17 @@ private:
      */
     bool plan_mpc(const rm_interfaces::msg::Target& target,
                   const rclcpp::Time& now, rm_interfaces::msg::GimbalCmd& command);
+    /**
+     * @brief 构造含一次预测换板的参考并求解两轴 MPC。
+     * @param candidates 各板基准命中状态，沿用既有时间及弹道补偿。
+     * @param now 本轮 ROS 求解时间。
+     * @param initial 实际云台外推至命令时间的状态，rad、rad/s。
+     * @param command 写入同一命令时刻的规划和真实目标瞄准信息。
+     * @return 参考和 MPC 均有效时为 true。
+     */
+    bool plan_handoff_mpc(const std::vector<State>& candidates, const rclcpp::Time& now,
+                          const GimbalSelectionState& initial,
+                          rm_interfaces::msg::GimbalCmd& command);
     std::unique_ptr<AxisMpc> yaw_mpc_;
     std::unique_ptr<AxisMpc> pitch_mpc_;
     AxisMpc::Config mpc_config_;
@@ -177,6 +196,14 @@ private:
     double fire_thresh_ = 0.003; // 济瞄规划误差阈值，rad。
     double feedback_timeout_ = 0.1;
     double target_timeout_ = 0.3;
+    std::string selection_policy_;
+    PlateSelectionConfig selection_config_;
+    std::unique_ptr<HandoffPlanner> handoff_planner_;
+    std::string selection_target_id_;
+    std::string selection_target_frame_;
+    int selection_armors_num_ = 0;
+    std::optional<rclcpp::Time> selection_target_stamp_;
+    std::optional<rclcpp::Time> selection_log_time_;
 
     std::unique_ptr<TrajectoryCompensator> trajectory_compensator_;
     std::unique_ptr<ManualCompensator> manual_compensator_;

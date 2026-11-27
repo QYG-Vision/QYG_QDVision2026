@@ -18,6 +18,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace qd::auto_aim {
 Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
@@ -77,6 +78,42 @@ Solver::Solver(std::weak_ptr<rclcpp::Node> n): node_(n) {
     pitch_config.max_acceleration =
         node->declare_parameter("solver.mpc.pitch.max_acceleration", 100.0);
     pitch_mpc_ = std::make_unique<AxisMpc>(pitch_config);
+
+    selection_policy_ = node->declare_parameter("solver.selection.policy", "nearest_distance");
+    if (selection_policy_ != "nearest_distance" && selection_policy_ != "acceleration_reachable") {
+        throw std::invalid_argument("unknown solver.selection.policy: " + selection_policy_);
+    }
+    selection_config_.dt = node->declare_parameter("solver.selection.dt", 0.01);
+    selection_config_.horizon = node->declare_parameter("solver.selection.horizon", 0.50);
+    selection_config_.capture_deadline =
+        node->declare_parameter("solver.selection.capture_deadline", 0.30);
+    selection_config_.hold_time = node->declare_parameter("solver.selection.hold_time", 0.10);
+    selection_config_.angle_tolerance =
+        node->declare_parameter("solver.selection.angle_tolerance", 0.02);
+    selection_config_.velocity_tolerance =
+        node->declare_parameter("solver.selection.velocity_tolerance", 0.10);
+    selection_config_.max_facing_angle =
+        node->declare_parameter("solver.selection.max_facing_angle_deg", 60.0) * M_PI / 180.0;
+    selection_config_.switch_improvement =
+        node->declare_parameter("solver.selection.switch_improvement", 0.20);
+    selection_config_.switch_hold_time =
+        node->declare_parameter("solver.selection.switch_hold_time", 0.05);
+    selection_config_.max_acceleration = { mpc_config_.max_acceleration,
+                                           pitch_config.max_acceleration };
+    HandoffConfig handoff_config;
+    handoff_config.max_transfer_time =
+        node->declare_parameter("solver.selection.handoff.max_transfer_time", 0.30);
+    handoff_config.window_margin =
+        node->declare_parameter("solver.selection.handoff.window_margin", 0.02);
+    handoff_planner_ = std::make_unique<HandoffPlanner>(selection_config_, handoff_config);
+    if (selection_policy_ == "acceleration_reachable"
+        && (!std::isfinite(feedback_timeout_) || feedback_timeout_ <= 0.0
+            || !std::isfinite(predict2send_delay_) || predict2send_delay_ < 0.0))
+    {
+        throw std::invalid_argument(
+            "reachable selection requires valid feedback timeout and delay"
+        );
+    }
 
     node.reset();
 }
@@ -149,6 +186,7 @@ rm_interfaces::msg::GimbalCmd Solver::solve(
         }
     }
     if (!valid_target) {
+        reset_selection();
         rm_interfaces::msg::GimbalCmd invalid;
         invalid.header = target.header;
         invalid.id = target.id;
